@@ -48,6 +48,24 @@ Portas ocupadas por terceiros: 5432 (backend-dotnet), 5173 (processo alheio). Us
    double-booking, faturamento TUSS/NFSe, estoque, sync offline idempotente, IA),
    frontend React com design system próprio ("instrumento clínico"), tema claro/escuro,
    command palette ⌘K, offline-first. Smoke test de 11 fluxos passou.
+5. **Marco P0-A concluído** — autenticação forte no `apps/api` (NestJS) do repo oficial:
+   - MFA TOTP (RFC 6238/4226, base32 RFC 4648) com secret selado AES-256-GCM (HKDF de
+     `AUTH_SECRET`), step-up login (`mfaToken` 5min que NÃO abre sessão), 10 códigos de
+     recuperação single-use (hash SHA-256), regeneração e desativação com revogação de
+     sessões (bump de `auth_version`).
+   - SSO OIDC (authorization code + PKCE S256, state single-use em `sso_flows`, nonce,
+     verificação de id_token por JWKS RS256/PS256/ES256/EdDSA, link por (issuer,subject)
+     com fallback de e-mail, auto-provision opt-in `SSO_AUTO_PROVISION` com role padrão
+     não clínica). Desabilitado quando `OIDC_*` não configurado (409 em /auth/sso/start).
+   - Guard JWT reescrito com `@Public()` (Reflector) + rejeição de step-up tokens como
+     sessão; rate limit em login/MFA/SSO; auditoria de todos os eventos de autenticação.
+   - Arquivos: `apps/api/src/{totp.ts,auth-mfa.ts,sso.ts,security.ts,smoke-mfa.ts,
+     auth-mfa.test.ts}`, `database/005_auth_mfa_sso.sql`, `.env.example`.
+   - **Verificação (registrada por regra)**: `npm test` **21/21 verdes** (9 baseline + 12
+     novos com vetores RFC 4226/6238/4648), `npm run build` API+Web **verde**. Migrações
+     schema+002–005 aplicadas num PG16 descartável. E2E real: `npm run smoke:mfa`
+     (enroll→activate→step-up→recovery single-use→regenerate→disable) **passou**; smoke
+     clássico **passou** (sem regressão de login/fluxo clínico). Commit: (ver git log).
 
 ## EM ABERTO (continuar daqui)
 
@@ -82,19 +100,24 @@ prescrição eletrônica · exames/imagens · FHIR R4/RNDS/TISS · IA clínica c
 
 ## DECISÕES PENDENTES (perguntar ao retomar)
 
-1. **Qual stack é oficial?** Repo = NestJS (`apps/api`) + React (`apps/web`);
-   `ehr-platform` = Express + React mais completo funcionalmente. As 7 frentes podem
-   (a) entrar em ehr-platform e virar produto, ou (b) ser reimplementadas em apps/api.
-   Recomendação técnica: (b) se o repo é a fonte de verdade; (a) se velocidade importa mais.
-2. Escopo do próximo marco: P0 (estabilidade/segurança) vs. as 7 frentes.
+1. **Qual stack é oficial?** DECIDIDA (retomada desta sessão): **(b) repo oficial**
+   `apps/api` (NestJS) + `apps/web`. As 7 frentes serão implementadas/reimplementadas
+   no repo oficial; `ehr-platform` vira referência de contrato/UX.
+2. Escopo do próximo marco: DECIDIDO — **"tudo"**: P0 (estabilidade/segurança) + as 7
+   frentes, em marcos verificáveis com commit cada. Ordem de execução: P0-A (feito),
+   P0-B (ICP-Brasil/PAdES), P0-C (backup/DR + E2E), depois frentes 1–8.
 
 ## COMANDOS ÚTEIS
 
 ```powershell
 # repo oficial
 cd C:\Users\Felipe\Documents\deepseek-harness\default-workspace\.starmed-inspect
-npm install; npm test; npm run build          # baseline esperada: 9/9 + build verde
+npm install; npm test; npm run build          # baseline atual: 21/21 + build verde
+npm run smoke -w @starmed/api                 # só com STARMED_TEST_DB=true (banco descartável)
+npm run smoke:mfa -w @starmed/api             # E2E do MFA (idem: banco descartável)
 docker compose up -d                          # Postgres do StarMed (compor POSTGRES_PASSWORD)
+# banco descartável para smoke nesta máquina: container ehr-platform-db-1 (:5433),
+# criar database p.ex. starmed_p0a_scratch e aplicar database/schema.sql + 002..005
 
 # plataforma paralela
 cd C:\Users\Felipe\Documents\deepseek-harness\default-workspace\ehr-platform

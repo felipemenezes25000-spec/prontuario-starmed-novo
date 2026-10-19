@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
 import { Db } from './db';
 import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } from './fhir-mappers';
-import { Actor, audit, hashPassword, issueToken, requireRole, verifyPassword } from './security';
+import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireRole, sessionResponse, verifyPassword } from './security';
 import { aiSchema, aiSuggestionSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, signSchema, uuid } from './domain';
 
 type R = {actor:Actor};
@@ -11,11 +11,13 @@ const auditQuery = (c:any, actor:Actor, action:string, type:string, id:string|nu
 
 @Controller('health')
 export class HealthController {
+  @Public()
   @Get() ok(){return {status:'ok',service:'starmed-api'};}
 }
 @Controller('auth')
 export class AuthController {
   constructor(private readonly db:Db){}
+  @Public()
   @Post('login')
   async login(@Body() raw:unknown) {
     const body=parse(loginSchema,raw);
@@ -24,7 +26,13 @@ export class AuthController {
     const user=res.rows.length===1?res.rows[0]:null;
     const valid=user && await verifyPassword(body.password,user.password_hash);
     if(!valid) throw new UnauthorizedException('Credenciais inválidas');
-    return {accessToken:await issueToken(user),user:{id:user.id,displayName:user.display_name,role:user.role,orgId:user.org_id,email:user.email}};
+    if(user.mfa_enabled){
+      // MFA step-up: no session is issued until the second factor succeeds.
+      await audit(this.db,user,'auth.login.step','user',user.id);
+      return {mfaRequired:true,mfaToken:await issueMfaStepToken(user),methods:['totp','recovery']};
+    }
+    await audit(this.db,user,'auth.login','user',user.id);
+    return sessionResponse(user);
   }
   @Get('me')
   me(@Req() req:R){const actor=a(req);return {id:actor.id,role:actor.role,email:actor.email,orgId:actor.org_id};}

@@ -73,6 +73,15 @@ export const addendumSchema = z.object({
   content: z.string().trim().min(10).max(10000)
 }).strict();
 
+// --- MFA (TOTP) and SSO (OIDC) ---
+export const totpCode = z.string().regex(/^\d{6}$/,'Código deve ter 6 dígitos');
+const stepToken = z.string().min(20).max(4000);
+
+export const mfaActivateSchema = z.object({ code: totpCode }).strict();
+export const mfaVerifySchema = z.object({ mfaToken: stepToken, code: totpCode }).strict();
+export const mfaRecoverySchema = z.object({ mfaToken: stepToken, recoveryCode: z.string().trim().min(8).max(40) }).strict();
+export const mfaPasswordConfirmSchema = z.object({ password: z.string().min(1).max(256), code: totpCode }).strict();
+
 const clinicalString = z.string().trim().max(5000);
 export const aiSuggestionSchema = z.object({
   chief_complaint: clinicalString.nullable().optional(),

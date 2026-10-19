@@ -6,9 +6,10 @@
     "dev": "node --watch -r ts-node/register src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "test": "tsx --test src/domain.test.ts",
+    "test": "tsx --test src/domain.test.ts src/auth-mfa.test.ts",
     "bootstrap": "tsx src/bootstrap.ts",
-    "smoke": "tsx src/smoke.ts"
+    "smoke": "tsx src/smoke.ts",
+    "smoke:mfa": "tsx src/smoke-mfa.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

@@ -6,14 +6,16 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { ClinicalAddendaController } from './addenda';
 import { AllergiesController, ProblemsController } from './clinical-history';
+import { MfaController, MfaService } from './auth-mfa';
+import { SsoController, OidcService } from './sso';
 import { Db } from './db';
 import { JwtGuard } from './security';
 import { HealthController, AuthController, UsersController, PatientsController, AppointmentsController, EncountersController, FhirController, AiController } from './controllers';
 import { assertSecurityConfig } from './config';
 
 @Module({
-  controllers:[HealthController,AuthController,UsersController,PatientsController,AppointmentsController,EncountersController,ClinicalAddendaController,AllergiesController,ProblemsController,FhirController,AiController],
-  providers:[Db,{provide:APP_GUARD,useClass:JwtGuard}]
+  controllers:[HealthController,AuthController,UsersController,PatientsController,AppointmentsController,EncountersController,ClinicalAddendaController,AllergiesController,ProblemsController,FhirController,AiController,MfaController,SsoController],
+  providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]
 })
 class ApiModule {}
 
@@ -21,7 +23,12 @@ async function bootstrap(){
   assertSecurityConfig();
   const app=await NestFactory.create(ApiModule,{bodyParser:true});
   app.use(helmet());
-  app.use('/auth/login',rateLimit({windowMs:15*60*1000,limit:10,standardHeaders:'draft-7',legacyHeaders:false,message:{message:'Excesso de tentativas; tente mais tarde'}}));
+  const limiter=(message:string,limit:number)=>rateLimit({windowMs:15*60*1000,limit,standardHeaders:'draft-7',legacyHeaders:false,message:{message}});
+  app.use('/auth/login',limiter('Excesso de tentativas; tente mais tarde',10));
+  app.use('/auth/mfa/verify',limiter('Excesso de tentativas de MFA; tente mais tarde',10));
+  app.use('/auth/mfa/recovery',limiter('Excesso de tentativas de recuperação; tente mais tarde',10));
+  app.use('/auth/sso/start',limiter('Excesso de inícios de SSO; tente mais tarde',30));
+  app.use('/auth/sso/callback',limiter('Excesso de callbacks SSO; tente mais tarde',30));
   app.use((req:any,res:any,next:any)=>{res.setHeader('Cache-Control','no-store'); next();});
   app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,OPTIONS',allowedHeaders:'Authorization,Content-Type'});
   await app.listen(Number(process.env.API_PORT || 3001),'127.0.0.1');

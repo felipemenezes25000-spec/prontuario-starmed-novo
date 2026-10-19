@@ -66,6 +66,28 @@ Portas ocupadas por terceiros: 5432 (backend-dotnet), 5173 (processo alheio). Us
      schema+002–005 aplicadas num PG16 descartável. E2E real: `npm run smoke:mfa`
      (enroll→activate→step-up→recovery single-use→regenerate→disable) **passou**; smoke
      clássico **passou** (sem regressão de login/fluxo clínico). Commit: (ver git log).
+6. **Marco P0-B (núcleo) concluído** — infraestrutura de assinatura ICP-Brasil/PAdES no
+   `apps/api` (dependência `pkijs`+`asn1js`, sem TLS inseguro em lugar nenhum):
+   - Trust store ICP-Brasil: allowlist fixa (raízes v4–v7, v12, v13) materializada e
+     **revisada** (`certs/icp-brasil/roots/` + manifest.tsv), falha FECHADA se vazio,
+     comparação por fingerprint (nunca por nome — lição do legado).
+   - Validação de cadeia própria (node X509Certificate): assinatura, validade com data
+     injetável, CA:TRUE, ancoragem obrigatória no trust store.
+   - PAdES/CMS detached: atributos ITI exatamente na codificação do container de
+     referência (OID de documento = UTF8String VAZIO, CRM/UF = UTF8String, ESS
+     signing-certificate-v2, signature-policy-identifier com LPA, SEM signingTime),
+     carimbo como unsigned attribute.
+   - Cliente RFC 3161 com taxonomia CredencialInvalida/AutoridadeIndisponivel/
+     RequisicaoRecusada/RespostaInvalida, política obrigatória sob o arco 2.16.76.1,
+     certReq=true, nonce, SERPRO (Basic token + Bearer carimbo) — capacidade nasce
+     DESLIGADA (sem TSA_URL não há bytes na rede).
+   - LPA (AD-RB/AD-RT v1.3) baixada e conferida contra o SHA-256 oficial do ITI
+     (`certs/icp-brasil/policies/`); scripts cross-plataforma `fetch-roots.mjs` e
+     `fetch-policies.mjs` com cadeia TLS completada via AIA.
+   - **Verificação**: `npm test` **45/45 verdes** (24 novos, PKI em runtime — zero chaves
+     fixas), `tsc --noEmit` limpo, `npm run build` API+Web **verde**.
+     Pendente (próximo passo): integração API (endpoints de assinatura/validação +
+     migração de `document_signatures`).
 
 ## EM ABERTO (continuar daqui)
 
@@ -128,9 +150,12 @@ cd frontend; npx vite --port 5273             # 5173 está ocupada
 
 ## LIÇÕES DE OPERAÇÃO
 
-- **SEM SUBAGENTES.** Decisão do usuário (19/10/2026): trabalho direto, sem delegação nesta
-  máquina. Os 6 subagentes de auditoria foram encerrados — 4 deles morreram em repositório
-  grande mesmo assim; a partir daqui, execução direta apenas.
+- **SUBAGENTES: liberados pelo usuário (nova decisão)** — em 19/10/2026 havia a regra
+  "sem subagentes" (4 quedas em repo de 6.475 arquivos); o usuário autorizou novamente
+  a paralelização. Mandato enxuto: cada subagent recebe os arquivos exatos a ler/criar,
+  proibição de listar árvore inteira, de instalar dependências e de tocar em arquivos
+  compartilhados (`main.ts`, `domain.ts`, `package.json`, migrações de outros) — a
+  integração/verificação/commit é feita pelo agente principal.
 
 - **Subagentes morrem em repositórios grandes** (4 quedas em 6.475 arquivos). Mandato
   enxuto: amostrar, classificar por pasta, jamais listar arquivo a arquivo.

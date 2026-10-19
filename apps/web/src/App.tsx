@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, HeartPulse, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, WifiOff, X } from 'lucide-react';
-import { api, type Session, type Patient, type Encounter, type ClinicalNote, type Doctor, type Appointment } from './api';
+import { api, type Session, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
 
@@ -67,6 +67,9 @@ export default function App(){
   const [encounters,setEncounters]=useState<Encounter[]>([]);
   const [encounter,setEncounter]=useState<Encounter|null>(null);
   const [note,setNote]=useState<ClinicalNote|null>(null);
+  const [addenda,setAddenda]=useState<ClinicalAddendum[]>([]);
+  const [addendumReason,setAddendumReason]=useState('');
+  const [addendumContent,setAddendumContent]=useState('');
   const [sections,setSections]=useState<Record<string,string>>({});
   const [specialty,setSpecialty]=useState<Specialty>('general');
   const [encounterType,setEncounterType]=useState('consultation');
@@ -100,7 +103,7 @@ export default function App(){
   },[user]);
   async function openPatient(p:Patient){
     if(!token)return;
-    setPatient(p);setEncounter(null);setNote(null);setSections({});setView('record');
+    setPatient(p);setEncounter(null);setNote(null);setAddenda([]);setSections({});setView('record');
     try {setEncounters(await api<Encounter[]>('/encounters?patientId='+encodeURIComponent(p.id),token));}
     catch(e){alert((e as Error).message,'error');}
   }
@@ -108,8 +111,12 @@ export default function App(){
     if(!token)return;
     setEncounter(e);setSpecialty((e.specialty in specialties?e.specialty:'general') as Specialty);
     try {
-      const current=await api<ClinicalNote|null>('/encounters/'+e.id+'/notes',token);
-      setNote(current);setSections(current?.content?.sections??{});
+      const [current,history]=await Promise.all([
+        api<ClinicalNote|null>('/encounters/'+e.id+'/notes',token),
+        api<ClinicalAddendum[]>('/encounters/'+e.id+'/addenda',token)
+      ]);
+      setNote(current);setSections(current?.content?.sections??{});setAddenda(history);
+      setAddendumReason('');setAddendumContent('');
     } catch(err){alert((err as Error).message,'error');}
   }
   async function createPatient(e:FormEvent){
@@ -152,13 +159,27 @@ export default function App(){
     }finally{setLoading(false);}
   }
   async function signNote(){
-    if(!token||!encounter||!isDoctor)return;
+    if(!token||!encounter||!note||!isDoctor||hasUnsavedChanges)return;
     if(!window.confirm('Confirma a revisão clínica e atestação? Uma nota assinada torna-se imutável. Salve as alterações antes.'))return;
     setLoading(true);
     try {
-      const signed=await api<ClinicalNote>('/encounters/'+encounter.id+'/notes/sign',token,'POST');
+      const signed=await api<ClinicalNote>('/encounters/'+encounter.id+'/notes/sign',token,'POST',{expectedVersion:note.version});
       setNote(signed);setSections(signed.content.sections);alert('Nota atestada e bloqueada para edição. Esta ação não é assinatura digital ICP-Brasil.','success');
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
+  }
+  async function appendAddendum(e:FormEvent){
+    e.preventDefault();
+    if(!token||!encounter||!user||!isDoctor||note?.status!=='signed')return;
+    if(encounter.doctor_id!==user.id){alert('Somente o médico responsável pode criar adendos.','error');return;}
+    if(!window.confirm('Confirma o adendo? Ele será atestado e não poderá ser alterado.'))return;
+    setLoading(true);
+    try {
+      await api<ClinicalAddendum>('/encounters/'+encounter.id+'/addenda',token,'POST',{reason:addendumReason,content:addendumContent});
+      setAddenda(await api<ClinicalAddendum[]>('/encounters/'+encounter.id+'/addenda',token));
+      setAddendumReason('');setAddendumContent('');
+      alert('Adendo atestado e registrado sem modificar a evolução original.','success');
+    }catch(err){alert((err as Error).message,'error');}
+    finally{setLoading(false);}
   }
   async function syncNow(){
     if(!token||!user)return;
@@ -251,6 +272,19 @@ export default function App(){
               <button className="secondary-button" disabled={loading} onClick={()=>void saveDraft(false)}><CloudUpload size={17}/> Salvar rascunho</button>
               <button className="primary-button" disabled={loading||!note||hasUnsavedChanges} onClick={()=>void signNote()}><ShieldCheck size={17}/> Atestar evolução</button>
             </div>:<p className="muted">Visualização de equipe assistencial. Apenas o médico responsável pode editar e atestar.</p>}
+            {note?.status==='signed'&&<div className="addenda-zone">
+              <div className="panel-title"><h2>Adendos da evolução</h2><span className="small-pill">{addenda.length}</span></div>
+              {addenda.length===0?<p className="muted">Nenhum adendo registrado.</p>:addenda.map(item=>
+                <article key={item.id} className="addendum-entry">
+                  <div className="addendum-meta"><ShieldCheck size={15}/><strong>{item.author_name||'Médico responsável'}</strong><span>{fmt(item.signed_at)}</span></div>
+                  <p><strong>Motivo:</strong> {item.reason}</p><p>{item.content}</p>
+                </article>)}
+              {isDoctor&&encounter.doctor_id===user?.id&&<form onSubmit={appendAddendum} className="stack gap-3 addendum-form">
+                <label>Motivo do adendo<input required minLength={8} maxLength={1000} value={addendumReason} onChange={e=>setAddendumReason(e.target.value)} placeholder="Ex.: Correção ou complementação de informação clínica"/></label>
+                <label>Conteúdo do adendo<textarea rows={4} required minLength={10} maxLength={10000} value={addendumContent} onChange={e=>setAddendumContent(e.target.value)} placeholder="Descreva a informação complementar; o documento original permanece preservado."/></label>
+                <button className="primary-button" type="submit" disabled={loading}><ShieldCheck size={16}/> Atestar adendo</button>
+              </form>}
+            </div>}
             <p className="muted footnote">Atestação no banco não substitui assinatura digital legal. Alterações locais precisam ser salvas antes de atestar.</p>
           </>}</div></div></>}
         </section>}

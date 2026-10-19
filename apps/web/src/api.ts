@@ -22,3 +22,8 @@ export async function api<T>(path:string,token:string|null,method='GET',body?:un
   if(!response.ok)throw new ApiError(response.status,typeof data?.message==='string'?data.message:JSON.stringify(data?.message||'Falha na API'));
   return data as T;
 }
+
+export type ClinicalAddendum={
+  id:string;note_id:string;author_id:string;author_name?:string;
+  reason:string;content:string;signed_at:string;
+};

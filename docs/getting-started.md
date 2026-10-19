@@ -21,3 +21,14 @@ Observações:
 - Agendamento ainda não impede dupla marcação; controle de recursos/slots entra na próxima fase.
 - IA somente após configurar URL/modelo/chave, contrato de operador e `organizations.ai_enabled=true` após aprovação administrativa.
 - Sincronização offline usa cifra AES-GCM por rascunho em IndexedDB. Não habilitar para PHI real sem gestão de dispositivos, wipe e pentest.
+
+## Migrações 003 e bases existentes
+O Compose monta e executa `database/003_clinical_extensions.sql` apenas quando o volume PostgreSQL é criado pela primeira vez. Para um banco criado com a versão anterior, aplicar explicitamente a migração, depois de backup e conferência de conflitos de agenda:
+
+```bash
+docker compose exec -T database psql -U starmed -d starmed < database/003_clinical_extensions.sql
+```
+
+O comando deve ser executado **uma única vez** em ambiente autorizado, a partir da raiz do projeto. Se já existirem dois agendamentos ativos sobrepostos para o mesmo profissional, a migração falhará sem alterar os dados (transação atômica); resolva os conflitos antes de reaplicar. Evite volume de dados reais nesta versão.
+
+A atestação de uma evolução agora exige `expectedVersion` na API. Correções posteriores são registradas como adendos separados e imutáveis. Sem identidade profissional validada e assinatura digital regulatória, isso permanece uma atestação de desenvolvimento.

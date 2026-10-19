@@ -20,7 +20,7 @@ Encounter 1:N Prescription/ClinicalDocument
 AuditEvent append-only
 
 ### Evolução necessária
-- Aditivos de evolução assinada (amendment, FHIR Composition relacionamentos).
+- Adendos imutáveis básicos implementados; faltam encadeamento de versões, relações FHIR Composition, assinatura digital legal e processos de retificação/aprovação clínica.
 - Consentimentos, segmentação por perfis de equipes, emergência break-glass e justificativa auditada.
 - Migrações versionadas, retenção legal, backup testado, criptografia KMS, segregação de ambientes.
 - IAM corporativo (OIDC + MFA), revogação e sessões curtas, rate-limit distribuído, observabilidade sem PHI.
@@ -40,3 +40,10 @@ Referências oficiais:
 - HL7 FHIR Composition R4: https://hl7.org/fhir/R4/composition.html
 - HHS HIPAA Security Rule: https://www.hhs.gov/hipaa/for-professionals/security/index.html
 - LGPD: https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm
+
+## Extensões implementadas na migração 003
+- Restrição PostgreSQL contra sobreposição de agendamentos ativos de um mesmo profissional (GiST/intervalos, aplicada ao mesmo tenant).
+- Adendos de nota atestada como registros separados e imutáveis, com motivo, texto, autoria, instante da atestação e evento de auditoria na mesma transação.
+- API de atestação de notas com `expectedVersion` para prevenção de gravações desatualizadas.
+- Rate limit básico de login em memória. **Não é proteção distribuída para produção** (requer Redis/gateway, MFA, políticas de IP e observabilidade).
+- Redação de informações sensíveis na consulta individual do paciente para perfis sem acesso clínico.

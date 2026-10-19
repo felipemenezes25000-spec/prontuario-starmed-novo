@@ -26,3 +26,5 @@
 .clinical-details{border-top:1px solid #ebf1f2;padding-top:12px;margin-top:12px}
 .clinical-details summary{color:#159d8b;font-size:11px;font-weight:800;cursor:pointer}
 .clinical-details form{padding:14px 0}
+
+.status-dot.offline{background:#e18e70}

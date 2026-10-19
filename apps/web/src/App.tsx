@@ -86,6 +86,7 @@ export default function App(){
   const [transcript,setTranscript]=useState('');
   const [aiResult,setAiResult]=useState<unknown>(null);
   const [loading,setLoading]=useState(false);
+  const [serverReady,setServerReady]=useState(false);
   const token=session?.accessToken??null;
   const user=session?.user;
   const isDoctor=user?.role==='doctor';
@@ -101,6 +102,21 @@ export default function App(){
       setPatients(p);setAppointments(ap);setStaff(us);
     }catch(e){alert((e as Error).message,'error');}
   }
+  useEffect(()=>{
+    let disposed=false;
+    const check=async()=>{
+      try{
+        const health=await api<{status:string}>('/health',null);
+        if(!disposed)setServerReady(health.status==='ok');
+      }catch{if(!disposed)setServerReady(false);}
+    };
+    const offline=()=>setServerReady(false);
+    void check();
+    const interval=window.setInterval(()=>void check(),30000);
+    window.addEventListener('offline',offline);
+    window.addEventListener('online',check);
+    return ()=>{disposed=true;window.clearInterval(interval);window.removeEventListener('offline',offline);window.removeEventListener('online',check);};
+  },[]);
   useEffect(()=>{if(session)void loadLists(session);},[session]);
   useEffect(()=>{
     if(user){void pendingCount(user.orgId,user.id).then(setPending).catch(()=>{});}
@@ -262,7 +278,7 @@ export default function App(){
     <div className="workspace">
       <header className="topbar">
         <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{view==='dashboard'?'Visão geral':view==='record'?'Prontuário':view==='patients'?'Pacientes':view==='agenda'?'Agenda':view==='team'?'Equipe':'Assistente de IA'}</strong></div>
-        <div className="topbar-right"><span className="status-dot"/> Ambiente conectado <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
+        <div className="topbar-right"><span className={'status-dot '+(serverReady?'':'offline')}/>{serverReady?'API disponível':'API indisponível'} <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="content">
         {banner&&<div className={'notice '+banner.kind}><span>{banner.kind==='error'?<AlertCircle size={17}/>:<CheckCircle2 size={17}/>}</span><span>{banner.text}</span><button aria-label="Fechar aviso" onClick={()=>setBanner(null)}><X size={17}/></button></div>}

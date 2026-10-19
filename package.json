@@ -2,12 +2,15 @@
   "name": "starmed-ehr",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev:web": "npm run dev -w @starmed/web",
     "dev:api": "npm run dev -w @starmed/api",
     "build": "npm run build -w @starmed/api && npm run build -w @starmed/web",
     "test": "npm run test -w @starmed/api",
-    "bootstrap": "npm run bootstrap -w @starmed/api"
+    "bootstrap": "npm run bootstrap -w @starmed/api",
+    "smoke": "npm run smoke -w @starmed/api"
   }
 }

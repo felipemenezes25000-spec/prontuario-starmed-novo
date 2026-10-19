@@ -9,7 +9,8 @@ MVP original de EHR/EMR para equipes clínicas, inspirado em boas práticas púb
 - NestJS 10 + PostgreSQL 16: login próprio para demonstração, RBAC por organização, agenda, pacientes, atendimentos e notas clínicas.
 - Rascunhos versionados com controle de concorrência, idempotência e atestação imutável.
 - Fila offline cifrada no navegador (Dexie/IndexedDB + AES-GCM), sincronização manual e conflitos sem sobrescrita silenciosa.
-- Primeiros recursos FHIR R4: leitura de `Patient` e `Encounter` (não é servidor FHIR certificado).
+- Recursos FHIR R4 parciais de leitura: `Patient`, `Encounter`, `AllergyIntolerance` e `Condition` (não é servidor FHIR certificado).
+- Alergias e lista de problemas estruturados; agenda com prevenção de colisões e adendos imutáveis após atestação.
 - Estrutura inicial de faturamento, prescrições, documentos, estoque e auditoria no banco.
 - Extração por IA configurável, desativada por padrão; nada é assinado ou registrado automaticamente.
 
@@ -22,6 +23,8 @@ MVP original de EHR/EMR para equipes clínicas, inspirado em boas práticas púb
 6. `npm run bootstrap`
 7. Em terminais separados: `npm run dev:api` e `npm run dev:web`
 8. Acesse http://localhost:5173; autentique como admin, cadastre um médico em **Equipe**, e entre como médico para criar evoluções.
+
+Execute `npm test` e `npm run build` antes de uso local; `npm run smoke` requer um banco **descartável** e a flag `STARMED_TEST_DB=true`. Os testes não foram executados neste ambiente.
 
 Consulte [instruções detalhadas](docs/getting-started.md), [arquitetura e roadmap](docs/architecture.md), [sincronização offline](docs/offline-sync.md) e [prompt de extração clínica](prompts/clinical-extraction.md).
 

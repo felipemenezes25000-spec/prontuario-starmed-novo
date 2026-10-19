@@ -32,3 +32,14 @@ docker compose exec -T database psql -U starmed -d starmed < database/003_clinic
 O comando deve ser executado **uma única vez** em ambiente autorizado, a partir da raiz do projeto. Se já existirem dois agendamentos ativos sobrepostos para o mesmo profissional, a migração falhará sem alterar os dados (transação atômica); resolva os conflitos antes de reaplicar. Evite volume de dados reais nesta versão.
 
 A atestação de uma evolução agora exige `expectedVersion` na API. Correções posteriores são registradas como adendos separados e imutáveis. Sem identidade profissional validada e assinatura digital regulatória, isso permanece uma atestação de desenvolvimento.
+
+## Smoke test de integração (somente banco descartável)
+Após iniciar API, web e banco de dados **sem dados reais**:
+
+1. Garanta que as migrações 001–004 foram aplicadas.
+2. Configure `STARMED_TEST_DB=true` temporariamente no terminal e `STARMED_SMOKE_ADMIN_EMAIL` / `STARMED_SMOKE_ADMIN_PASSWORD` com a conta admin local (podem ser omitidas se as variáveis de bootstrap estiverem no .env).
+3. Execute `npm run smoke` a partir da raiz. O script exige host de loopback e cria um médico, um paciente e atendimentos sintéticos. **Não há limpeza automática.**
+4. Verifique saída e teste também o build com `npm run build` e a suíte unitária `npm test`.
+
+O smoke valida, via HTTP, autenticação obrigatória, registro de alergias/problemas, salvamento idempotente, atestação e bloqueio pós-atestação, adendos idempotentes, leitura FHIR e prevenção de colisões na agenda.
+**Ainda faltam:** autenticação entre múltiplos tenants, integrações de prescrição, testes automatizados de interface, concorrência real, backup/restore, pentest e conformidade clínica/regulatória. O script foi escrito para execução local, mas não foi executado neste ambiente.

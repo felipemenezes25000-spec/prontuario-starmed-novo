@@ -11,7 +11,7 @@ import {
   unwrapMllp,
   wrapMllp
 } from './hl7v2';
-import { buildTissConsulta, buildTissLote, extractLoteHash } from './tiss';
+import { buildTissConsulta, buildTissLote, extractLoteHash, type TissConsultaInput } from './tiss';
 import { buildNfseEmissao, hashNfse, sanitizeXml } from './nfse';
 
 // Sample ADT^A01 exercising all five HL7 escapes:
@@ -117,34 +117,56 @@ test('ORU^R01 minimal parse reads OBX-3/5/6/7/8', () => {
   });
 });
 
-const TISS_INPUT = {
+const TISS_INPUT: TissConsultaInput = {
   loteId: 'LOTE-2025-0001',
-  prestador: { cnpj: '12345678000199', registroAns: '305039' },
-  beneficiario: { numeroCarteira: 'CART-8899', nome: 'MARIA & JOSE DA SILVA', nascimento: '1985-03-12' },
-  procedimento: { codigoTUSS: '2.14.02.003-0', dataExecucao: '2025-01-15', valor: 250.5 },
-  solicitante: { nome: 'DRA. ANA & CIA', conselho: 'CRM', numeroRegistro: '123456' }
+  sequencialTransacao: '1',
+  dataRegistro: '2025-01-15',
+  horaRegistro: '10:30:00',
+  prestador: { cnpj: '12345678000199' },
+  registroAnsOperadora: '305039',
+  numeroGuiaPrestador: '1001',
+  beneficiario: { numeroCarteira: 'CART-8899', atendimentoRN: 'N' },
+  contratadoExecutante: { cnpj: '12345678000199', cnes: '1234567' },
+  profissionalExecutante: { nome: 'DRA. ANA & CIA', conselho: '02', numeroRegistro: '123456', uf: '35', cbos: '225110' },
+  indicacaoAcidente: '9',
+  atendimento: { regime: '01', data: '2025-01-15', tipoConsulta: '1' },
+  procedimento: { codigoTabela: '22', codigo: '20101012', valor: 250.5 }
 };
 
-test('TISS consulta contains ANS/card/beneficiary/TUSS tags and escapes "&"', () => {
+test('TISS 4.01.00: mensagemTISS com cabecalho/loteGuias/guiaConsulta e escapes', () => {
   const xml = buildTissConsulta(TISS_INPUT);
-  assert.match(xml, /<tiss:tourFeConteudoMedico xmlns:tiss="http:\/\/www\.ans\.gov\.br\/padroes\/tiss"/);
-  assert.match(xml, /<tiss:cnpjCartaoANS>12345678000199<\/tiss:cnpjCartaoANS>/);
-  assert.match(xml, /<tiss:numeroGuiaBeneficiario>LOTE-2025-0001<\/tiss:numeroGuiaBeneficiario>/);
-  assert.match(xml, /<tiss:codigoTUSS>2\.14\.02\.003-0<\/tiss:codigoTUSS>/);
-  assert.ok(xml.includes('MARIA &amp; JOSE DA SILVA'), 'nome do beneficiário escapado');
-  assert.ok(xml.includes('DRA. ANA &amp; CIA'), 'nome do solicitante escapado');
+  assert.match(xml, /<tiss:mensagemTISS xmlns:tiss="http:\/\/www\.ans\.gov\.br\/padroes\/tiss\/schemas">/);
+  assert.match(xml, /<tiss:tipoTransacao>ENVIO_LOTE_GUIAS<\/tiss:tipoTransacao>/);
+  assert.match(xml, /<tiss:Padrao>4\.01\.00<\/tiss:Padrao>/);
+  assert.match(xml, /<tiss:registroANS>305039<\/tiss:registroANS>/, 'registro ANS da operadora (6 dígitos)');
+  assert.match(xml, /<tiss:guiaConsulta>/, 'guia de consulta dentro de guiasTISS');
+  assert.match(xml, /<tiss:CNES>1234567<\/tiss:CNES>/);
+  assert.match(xml, /<tiss:conselhoProfissional>02<\/tiss:conselhoProfissional>/, 'CRM=02 (dm_conselhoProfissional)');
+  assert.match(xml, /<tiss:UF>35<\/tiss:UF>/, 'UF como código IBGE (dm_UF)');
+  assert.match(xml, /<tiss:CBOS>225110<\/tiss:CBOS>/);
+  assert.match(xml, /<tiss:codigoTabela>22<\/tiss:codigoTabela>/, 'TUSS tabela 22');
+  assert.match(xml, /<tiss:valorProcedimento>250\.50<\/tiss:valorProcedimento>/, 'decimal8-2');
+  assert.match(xml, /<tiss:epilogo>[\s\S]*<tiss:hash>[0-9a-f]{64}<\/tiss:hash>/, 'hash de integridade no epilogo');
+  assert.ok(xml.includes('DRA. ANA &amp; CIA'), 'nome do profissional escapado');
   assert.ok(!/&(?!amp;|lt;|gt;|quot;|apos;)/.test(xml), 'nenhum & solto no XML');
 });
 
-test('TISS lote hash is stable for identical input', () => {
-  const first = buildTissLote([TISS_INPUT, { ...TISS_INPUT, loteId: 'LOTE-2025-0002' }]);
-  const second = buildTissLote([TISS_INPUT, { ...TISS_INPUT, loteId: 'LOTE-2025-0002' }]);
-  assert.equal(first.hash, second.hash, 'mesmo lote -> mesmo hash');
-  assert.equal(first.hash, extractLoteHash(first.xml), 'hash = sha256 do XML do lote');
-  assert.match(first.hash, /^[0-9a-f]{64}$/);
-  assert.ok(first.xml.includes('<tiss:lot '), 'lote envolvido em <tiss:lot>');
+test('TISS 4.01.00: valida entrada (CNPJ/UF/CBOS/conselho) e limita o lote', () => {
+  assert.throws(() => buildTissConsulta({ ...TISS_INPUT, prestador: { cnpj: '123' } }), /cnpj deve ter 14 dígitos/);
+  assert.throws(() => buildTissConsulta({ ...TISS_INPUT, profissionalExecutante: { ...TISS_INPUT.profissionalExecutante, uf: 'SP' } }), /código IBGE/);
+  assert.throws(() => buildTissConsulta({ ...TISS_INPUT, profissionalExecutante: { ...TISS_INPUT.profissionalExecutante, cbos: '123' } }), /cbos/);
+  assert.throws(() => buildTissLote([]), /sem guias/);
+  assert.throws(() => buildTissLote([TISS_INPUT, { ...TISS_INPUT, prestador: { cnpj: '99999999000191' } }]), /único prestador/);
+});
+
+test('TISS 4.01.00: lote com N guias é determinístico e hash estável', () => {
+  const first = buildTissLote([TISS_INPUT, { ...TISS_INPUT, numeroGuiaPrestador: '1002' }]);
+  const second = buildTissLote([TISS_INPUT, { ...TISS_INPUT, numeroGuiaPrestador: '1002' }]);
+  assert.equal(first, second, 'mesmo lote -> mesmo XML');
+  assert.equal((first.match(/<tiss:guiaConsulta>/g) || []).length, 2, 'duas guias no mesmo lote');
+  assert.match(extractLoteHash(first), /^[0-9a-f]{64}$/);
   const other = buildTissLote([{ ...TISS_INPUT, procedimento: { ...TISS_INPUT.procedimento, valor: 999.99 } }]);
-  assert.notEqual(first.hash, other.hash, 'conteúdo diferente -> hash diferente');
+  assert.notEqual(first, other, 'conteúdo diferente -> XML diferente');
 });
 
 const NFSE_INPUT = {

@@ -7,7 +7,7 @@ import { Db } from '../db';
 import { Actor, audit, requireRole } from '../security';
 import { parse } from '../domain';
 import { buildAck, getFieldValue, parseHL7V2, mapperAdtToEncounterFields, parseADT_A01, parseADT_A03, parseORU_R01 } from './hl7v2';
-import { buildTissConsulta, buildTissLote, type TissConsultaInput } from './tiss';
+import { buildTissConsulta, buildTissLote, extractLoteHash, type TissConsultaInput } from './tiss';
 import { buildNfseEmissao, hashNfse, type NfseInput } from './nfse';
 
 type R = { actor: Actor };
@@ -16,11 +16,33 @@ const a = (r: R) => r.actor;
 const hl7MessageSchema = z.object({ message: z.string().min(8).max(1000000) }).strict();
 
 const tissGuideSchema = z.object({
-  loteId: z.string().min(1).max(60),
-  prestador: z.object({ cnpj: z.string().min(14).max(14), registroAns: z.string().min(1).max(20) }).strict(),
-  beneficiario: z.object({ numeroCarteira: z.string().min(1).max(30), nome: z.string().min(1).max(160), nascimento: z.string().min(8).max(10) }).strict(),
-  procedimento: z.object({ codigoTUSS: z.string().min(1).max(10), dataExecucao: z.string().min(8).max(10), valor: z.number().nonnegative() }).strict(),
-  solicitante: z.object({ nome: z.string().min(1).max(160), conselho: z.string().min(1).max(40), numeroRegistro: z.string().min(1).max(20) }).strict()
+  loteId: z.string().min(1).max(12),
+  sequencialTransacao: z.string().regex(/^\d{1,12}$/),
+  dataRegistro: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  horaRegistro: z.string().regex(/^\d{2}:\d{2}:\d{2}$/),
+  prestador: z.object({ cnpj: z.string().regex(/^\d{14}$/) }).strict(),
+  registroAnsOperadora: z.string().regex(/^\d{6}$/),
+  numeroGuiaPrestador: z.string().regex(/^\d{1,20}$/),
+  beneficiario: z.object({ numeroCarteira: z.string().regex(/^\d{1,20}$/), atendimentoRN: z.enum(['S', 'N']) }).strict(),
+  contratadoExecutante: z.object({ cnpj: z.string().regex(/^\d{14}$/), cnes: z.string().regex(/^\d{1,7}$/) }).strict(),
+  profissionalExecutante: z.object({
+    nome: z.string().min(1).max(70).optional(),
+    conselho: z.string().regex(/^\d{2}$/),                 // dm_conselhoProfissional (CRM=02)
+    numeroRegistro: z.string().regex(/^\d{1,15}$/),
+    uf: z.string().regex(/^\d{2}$/),                        // dm_UF = código IBGE
+    cbos: z.string().regex(/^\d{6}$/)
+  }).strict(),
+  indicacaoAcidente: z.enum(['0', '1', '2', '9']),
+  atendimento: z.object({
+    regime: z.enum(['01', '02', '03', '04', '05']),
+    data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    tipoConsulta: z.enum(['1', '2', '3', '4'])
+  }).strict(),
+  procedimento: z.object({
+    codigoTabela: z.enum(['18', '19', '20', '22', '90', '98', '00']),
+    codigo: z.string().regex(/^\d{1,10}$/),
+    valor: z.number().nonnegative()
+  }).strict()
 }).strict();
 
 const tissLoteSchema = z.object({ guides: z.array(tissGuideSchema).min(1).max(100) }).strict();
@@ -111,11 +133,12 @@ export class InteropController {
     const actor = a(req);
     requireRole(actor, ['doctor']);
     const { guides } = parse(tissLoteSchema, raw);
-    const { xml, hash } = buildTissLote(guides as TissConsultaInput[]);
+    const xml = buildTissLote(guides as TissConsultaInput[]);
     await this.db.query(
       'INSERT INTO inbound_messages(org_id,direction,protocol,message_type,external_control_id,payload,status) VALUES($1,$2,$3,$4,$5,$6,$7)',
       [actor.org_id, 'outbound', 'tiss', 'TISS_LOTE', guides[0]?.loteId ?? null, xml, 'processed']
     );
+    const hash = extractLoteHash(xml);
     await audit(this.db, actor, 'interop.tiss.lote', 'organization', actor.org_id, { guides: guides.length, hash });
     return { hash, xml };
   }
@@ -132,24 +155,43 @@ export class InteropController {
   }
 }
 
-// Preview query accepts the same shape as a TISS guide (camelCase keys).
+// Preview query accepts the same shape as a TISS 4.01.00 guide (flat camelCase keys).
 const tissPreviewSchema = z.object({
-  loteId: z.string().min(1).max(60),
-  prestadorCnpj: z.string().min(14).max(14),
-  registroAns: z.string().min(1).max(20),
-  numeroCarteira: z.string().min(1).max(30),
-  nomeBeneficiario: z.string().min(1).max(160),
-  nascimento: z.string().min(8).max(10),
-  codigoTUSS: z.string().min(1).max(10),
-  dataExecucao: z.string().min(8).max(10),
-  valor: z.coerce.number().nonnegative(),
-  nomeSolicitante: z.string().min(1).max(160),
-  conselho: z.string().min(1).max(40),
-  numeroRegistro: z.string().min(1).max(20)
+  loteId: z.string().min(1).max(12),
+  sequencialTransacao: z.string().regex(/^\d{1,12}$/),
+  dataRegistro: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  horaRegistro: z.string().regex(/^\d{2}:\d{2}:\d{2}$/),
+  prestadorCnpj: z.string().regex(/^\d{14}$/),
+  registroAnsOperadora: z.string().regex(/^\d{6}$/),
+  numeroGuiaPrestador: z.string().regex(/^\d{1,20}$/),
+  numeroCarteira: z.string().regex(/^[\w\-]{1,20}$/),
+  atendimentoRN: z.enum(['S', 'N']),
+  contratadoCnpj: z.string().regex(/^\d{14}$/),
+  cnes: z.string().regex(/^\d{1,7}$/),
+  nomeProfissional: z.string().min(1).max(70).optional(),
+  conselhoProfissional: z.string().regex(/^\d{2}$/),
+  numeroConselho: z.string().regex(/^\d{1,15}$/),
+  uf: z.string().regex(/^\d{2}$/),
+  cbos: z.string().regex(/^\d{6}$/),
+  indicacaoAcidente: z.enum(['0', '1', '2', '9']),
+  regimeAtendimento: z.enum(['01', '02', '03', '04', '05']),
+  dataAtendimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tipoConsulta: z.enum(['1', '2', '3', '4']),
+  codigoTabela: z.enum(['18', '19', '20', '22', '90', '98', '00']),
+  codigoProcedimento: z.string().regex(/^\d{1,10}$/),
+  valor: z.coerce.number().nonnegative()
 }).strict().transform<TissConsultaInput>(q => ({
   loteId: q.loteId,
-  prestador: { cnpj: q.prestadorCnpj, registroAns: q.registroAns },
-  beneficiario: { numeroCarteira: q.numeroCarteira, nome: q.nomeBeneficiario, nascimento: q.nascimento },
-  procedimento: { codigoTUSS: q.codigoTUSS, dataExecucao: q.dataExecucao, valor: q.valor },
-  solicitante: { nome: q.nomeSolicitante, conselho: q.conselho, numeroRegistro: q.numeroRegistro }
+  sequencialTransacao: q.sequencialTransacao,
+  dataRegistro: q.dataRegistro,
+  horaRegistro: q.horaRegistro,
+  prestador: { cnpj: q.prestadorCnpj },
+  registroAnsOperadora: q.registroAnsOperadora,
+  numeroGuiaPrestador: q.numeroGuiaPrestador,
+  beneficiario: { numeroCarteira: q.numeroCarteira, atendimentoRN: q.atendimentoRN },
+  contratadoExecutante: { cnpj: q.contratadoCnpj, cnes: q.cnes },
+  profissionalExecutante: { nome: q.nomeProfissional, conselho: q.conselhoProfissional, numeroRegistro: q.numeroConselho, uf: q.uf, cbos: q.cbos },
+  indicacaoAcidente: q.indicacaoAcidente,
+  atendimento: { regime: q.regimeAtendimento, data: q.dataAtendimento, tipoConsulta: q.tipoConsulta },
+  procedimento: { codigoTabela: q.codigoTabela, codigo: q.codigoProcedimento, valor: q.valor }
 }));

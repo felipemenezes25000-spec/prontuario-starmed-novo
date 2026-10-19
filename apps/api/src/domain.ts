@@ -72,3 +72,29 @@ export const addendumSchema = z.object({
   reason: z.string().trim().min(8).max(1000),
   content: z.string().trim().min(10).max(10000)
 }).strict();
+
+const clinicalString = z.string().trim().max(5000);
+export const aiSuggestionSchema = z.object({
+  chief_complaint: clinicalString.nullable().optional(),
+  hpi: clinicalString.nullable().optional(),
+  review_of_systems:z.array(clinicalString).max(30).optional(),
+  history:z.array(clinicalString).max(30).optional(),
+  allergies:z.array(clinicalString).max(30).optional(),
+  exam_findings:z.array(clinicalString).max(30),
+  assessment:z.array(z.object({
+    text:clinicalString,
+    icd10:z.string().max(30).nullable().optional(),
+    certainty:z.enum(['reported','suspected','confirmed'])
+  }).strict()).max(30),
+  medications_mentioned:z.array(z.object({
+    name:z.string().trim().min(1).max(200),
+    dose:z.string().max(120).nullable().optional(),
+    route:z.string().max(120).nullable().optional(),
+    frequency:z.string().max(120).nullable().optional(),
+    context:z.enum(['reported','proposed'])
+  }).strict()).max(50),
+  plan_as_spoken:z.array(clinicalString).max(50),
+  uncertainties:z.array(clinicalString).max(50),
+  evidence_quotes:z.array(clinicalString).max(30).optional(),
+  requires_physician_review:z.boolean().optional()
+}).strict();

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addendumSchema, draftSchema, encounterSchema, signSchema, validateNoteForSignature } from './domain';
+import { addendumSchema, aiSuggestionSchema, draftSchema, encounterSchema, signSchema, validateNoteForSignature } from './domain';
 import { hashPassword, verifyPassword } from './security';
 import { toFhirAllergy, toFhirCondition } from './fhir-mappers';
 
@@ -50,4 +50,11 @@ test('FHIR R4 condition mapping retains terminology identifiers',()=>{
   assert.equal(c.resourceType,'Condition');
   assert.equal(c.verificationStatus.coding[0].code,'provisional');
   assert.equal(c.code.coding?.[0].code,'Z00.0');
+});
+
+test('rejects unstructured/hallucinated AI output types',()=>{
+  const invalid={chief_complaint:42,exam_findings:[],assessment:[],medications_mentioned:[],plan_as_spoken:[],uncertainties:[]};
+  assert.equal(aiSuggestionSchema.safeParse(invalid).success,false);
+  const valid={chief_complaint:null,exam_findings:[],assessment:[],medications_mentioned:[],plan_as_spoken:[],uncertainties:[]};
+  assert.equal(aiSuggestionSchema.safeParse(valid).success,true);
 });

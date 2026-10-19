@@ -29,6 +29,11 @@ O Compose monta e executa `database/003_clinical_extensions.sql` apenas quando o
 docker compose exec -T database psql -U starmed -d starmed < database/003_clinical_extensions.sql
 ```
 
+Para instalações antigas, execute também a migração de alergias e problemas estruturados **uma única vez**, após a 003:
+```bash
+docker compose exec -T database psql -U starmed -d starmed < database/004_patient_history.sql
+```
+
 O comando deve ser executado **uma única vez** em ambiente autorizado, a partir da raiz do projeto. Se já existirem dois agendamentos ativos sobrepostos para o mesmo profissional, a migração falhará sem alterar os dados (transação atômica); resolva os conflitos antes de reaplicar. Evite volume de dados reais nesta versão.
 
 A atestação de uma evolução agora exige `expectedVersion` na API. Correções posteriores são registradas como adendos separados e imutáveis. Sem identidade profissional validada e assinatura digital regulatória, isso permanece uma atestação de desenvolvimento.

@@ -105,6 +105,10 @@ cd frontend; npx vite --port 5273             # 5173 está ocupada
 
 ## LIÇÕES DE OPERAÇÃO
 
+- **SEM SUBAGENTES.** Decisão do usuário (19/10/2026): trabalho direto, sem delegação nesta
+  máquina. Os 6 subagentes de auditoria foram encerrados — 4 deles morreram em repositório
+  grande mesmo assim; a partir daqui, execução direta apenas.
+
 - **Subagentes morrem em repositórios grandes** (4 quedas em 6.475 arquivos). Mandato
   enxuto: amostrar, classificar por pasta, jamais listar arquivo a arquivo.
 - `git push` funciona via GitHub CLI (`credential.https://github.com.helper = gh`).

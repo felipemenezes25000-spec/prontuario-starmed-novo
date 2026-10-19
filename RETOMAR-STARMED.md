@@ -95,8 +95,8 @@ FHIR R4/RNDS/TISS · IA com revisão humana obrigatória.
 
 ## 6. REGRAS DE OPERAÇÃO (lições desta máquina)
 
-- **Subagentes morrem em repositórios grandes** (4 quedas em 6.475 arquivos). Mandato enxuto:
-  amostrar, classificar por pasta, jamais listar arquivo a arquivo; máximo ~8 leituras por agente.
+- **SEM SUBAGENTES** — decisão do usuário (19/10/2026): execute tudo diretamente, sem
+  delegar a agentes filhos nesta máquina (os 6 de auditoria foram encerrados).
 - `git push` funciona via GitHub CLI (credencial já configurada). Commits na main são permitidos.
 - Antes de TODO commit: `npm test` + `npm run build` no repo oficial (baseline: 9/9 + verde) e
   registrar o resultado em `CONTINUE-STARMED.md`.

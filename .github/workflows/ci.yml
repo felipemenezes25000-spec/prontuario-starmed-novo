@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api:
+    name: API — testes e build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: starmed_test
+          POSTGRES_USER: starmed
+          POSTGRES_PASSWORD: starmed_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U starmed -d starmed_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://starmed:starmed_ci@127.0.0.1:5432/starmed_test
+      AUTH_SECRET: ci-only-secret-not-for-production-0123456789
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm install --no-audit --no-fund
+      - name: Testes de domínio (API)
+        run: npm test
+      - name: Build (API + Web)
+        run: npm run build
+      - name: Smoke em banco descartável
+        run: npm run smoke
+        env:
+          STARMED_TEST_DB: "true"
+
+  web:
+    name: Web — typecheck e bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Build web
+        run: npm run build -w @starmed/web
+
+  security:
+    name: Gitleaks — varredura de segredos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true

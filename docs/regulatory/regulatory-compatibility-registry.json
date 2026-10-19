@@ -1,0 +1,505 @@
+{
+  "$comment": "Regulatory Compatibility Registry da StarMed (§44 da especificação-mãe). Fonte única do estado de cada padrão/integração regulatória. Preencher SOMENTE com evidência. 'maturity' usa os estados oficiais do §0.1. scripts/regulatory-registry.mjs valida e gera docs/compliance/REGULATORY_COMPATIBILITY_REGISTRY.md; o CI reprova quando uma versão está vencida (valid_until) ou quando a conferência com a fonte oficial ficou velha (review_by).",
+  "registry_version": 1,
+  "updated_at": "2026-09-25",
+  "maturity_states": [
+    "NÃO COMPROVADO",
+    "PLANEJADO",
+    "PARCIAL",
+    "IMPLEMENTADO",
+    "TESTADO",
+    "INTEGRADO",
+    "HOMOLOGADO",
+    "PRODUÇÃO",
+    "CERTIFICADO"
+  ],
+  "entries": [
+    {
+      "id": "rnds.transport",
+      "domain": "sus",
+      "name": "RNDS — transporte FHIR R4 (POST de Bundle, protocolo pelo Location)",
+      "adapter": "rnds",
+      "maturity": "TESTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "credenciamento RNDS por estabelecimento, certificado ICP-Brasil e perfis homologados",
+      "evidence": [
+        "SusPipelineIntegrityIntegrationTests",
+        "docs/public-sector/STARMED_INTEROPERABILIDADE.md §2"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/composicao/seidigi/rnds/estrutura-do-projeto"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "rnds.model.RAC",
+      "domain": "sus",
+      "name": "RNDS — RAC (Registro de Atendimento Clínico)",
+      "adapter": "rnds",
+      "maturity": "PARCIAL",
+      "homologated": false,
+      "production": false,
+      "blocker": "RNDS_OFFICIAL_MODEL_REQUIRED — mapper do perfil oficial não incorporado",
+      "evidence": [
+        "sus-aps-canonical-v1 estruturado",
+        "evento bloqueia com motivo na fila SUS"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/composicao/seidigi/rnds/estrutura-do-projeto"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "rnds.model.REL",
+      "domain": "sus",
+      "name": "RNDS — REL (Registro de Exame Laboratorial)",
+      "adapter": "rnds",
+      "maturity": "PARCIAL",
+      "homologated": false,
+      "production": false,
+      "blocker": "RNDS_OFFICIAL_MODEL_REQUIRED",
+      "evidence": [
+        "exam_results canônico e append-only (StarMedLaboratoryIntegrationTests)"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/composicao/seidigi/rnds/estrutura-do-projeto"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "rnds.model.RIA",
+      "domain": "sus",
+      "name": "RNDS — RIA (Registro de Imunobiológico Administrado)",
+      "adapter": "rnds",
+      "maturity": "PLANEJADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "vacinação segue local_only; perfil oficial e credencial RNDS",
+      "evidence": [
+        "aps_immunizations append-only (StarMedApsCareIntegrationTests)"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/composicao/seidigi/rnds/estrutura-do-projeto"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "rnds.model.RIRA",
+      "domain": "sus",
+      "name": "RNDS — RIRA (Registro de Informação de Regulação Assistencial)",
+      "adapter": "rnds",
+      "maturity": "PARCIAL",
+      "homologated": false,
+      "production": false,
+      "blocker": "RNDS_OFFICIAL_MODEL_REQUIRED",
+      "evidence": [
+        "StarMedRegulationIntegrationTests (fila e histórico append-only)"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/composicao/seidigi/rnds/estrutura-do-projeto"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "esus.ledi.4.0",
+      "domain": "sus",
+      "name": "e-SUS APS — LEDI família 4.0 (PEC 4.0–4.5)",
+      "adapter": "esus-aps",
+      "maturity": "PARCIAL",
+      "homologated": false,
+      "production": false,
+      "blocker": "LEDI_OFFICIAL_ARTIFACT_REQUIRED — serializador oficial da versão contratada",
+      "evidence": [
+        "LediVersionRegistry",
+        "EsusInstitutionTargetsIntegrationTests"
+      ],
+      "sources": [
+        "https://sisaps.saude.gov.br/sistemas/esusaps/docs/versoes/versao_5_3/"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "esus.ledi.5.0",
+      "domain": "sus",
+      "name": "e-SUS APS — LEDI família 5.0 (PEC 5.0–5.2)",
+      "adapter": "esus-aps",
+      "maturity": "PARCIAL",
+      "homologated": false,
+      "production": false,
+      "blocker": "LEDI_OFFICIAL_ARTIFACT_REQUIRED",
+      "evidence": [
+        "LediVersionRegistry"
+      ],
+      "sources": [
+        "https://sisaps.saude.gov.br/sistemas/esusaps/docs/versoes/versao_5_3/"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "esus.ledi.5.3",
+      "domain": "sus",
+      "name": "e-SUS APS — LEDI família 5.3 (PEC 5.3–5.4) via API para sistemas próprios",
+      "adapter": "esus-aps",
+      "maturity": "PARCIAL",
+      "homologated": false,
+      "production": false,
+      "blocker": "credencial do PEC de cada município (API de recebimento) e identificação da instalação (Ledi:Instalacao: contra-chave, CPF/CNPJ, razão social); dados da finalização do atendimento (local, turno, tipo, conduta) ainda não chegam ao mapeador da FAI",
+      "evidence": [
+        "LediVersionRegistry",
+        "destino por município em sus_integration_settings",
+        "IDL oficial do LEDI 5.3 (15 arquivos .thrift) e dicionário guardados em TestData/ledi/5.3 com SHA-256 — portal de integração do e-SUS APS (Laboratório Bridge/UFSC), para onde a página \"Sistemas Externos\" do Ministério aponta",
+        "ThriftBinaryProtocolTests, LediTransportTests, UnicaLotacaoHeaderTests, LediIdlConformanceTests (todo campo escrito confere com o IDL guardado: id, tipo e required), LediCodeTablesConformanceTests e LediDictionaryTests (códigos contra o dicionário)",
+        "LediAtendimentoIndividualSerializerTests, LediProcedimentosSerializerTests, LediVacinacaoSerializerTests, LediCadastroIndividualSerializerTests (ida e volta em Thrift binário, obrigatórios recusados, código fora do dicionário recusado)",
+        "EsusApsClient.SubmitBatchAsync (login e envio ficha a ficha na mesma sessão, como a API de transmissão oficial descreve)"
+      ],
+      "sources": [
+        "https://sisaps.saude.gov.br/sistemas/esusaps/docs/versoes/versao_5_3/",
+        "https://www.gov.br/saude/pt-br/composicao/saps/publicacoes/notas-tecnicas-e-informativas/nota-tecnica-no-32-2026-cgsb-desf-saps-ms",
+        "https://integracao.esusaps.bridge.ufsc.tech/v530/",
+        "https://sisaps.saude.gov.br/sistemas/esusaps/docs/manual/APOIO/API_transmissao/"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "cadsus.pdq",
+      "domain": "sus",
+      "name": "CADSUS — consulta PDQ de identidade (CNS)",
+      "adapter": "cadsus",
+      "maturity": "TESTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "credencial de homologação/produção do ente",
+      "evidence": [
+        "CadsusHomologationIntegrationTests (ignorado sem credencial)",
+        "DATASUS_CADSUS_CNS_INTEGRACAO.md"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/acesso-a-informacao/gestao-do-sus/programacao-regulacao-controle-e-financiamento-da-mac/sistemas-de-informacao-em-saude"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "cnes.soa",
+      "domain": "sus",
+      "name": "CNES — barramento SOA público (estabelecimento, profissional, vínculo)",
+      "adapter": "cnes",
+      "maturity": "TESTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": null,
+      "evidence": [
+        "CnesSoapAdapterTests",
+        "SOA_CNES_READINESS_SIGTAP_2026-08-22.md"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/acesso-a-informacao/gestao-do-sus/programacao-regulacao-controle-e-financiamento-da-mac/sistemas-de-informacao-em-saude"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "sigtap.soa",
+      "domain": "sus",
+      "name": "SIGTAP — consulta de competência e procedimentos (SOA)",
+      "adapter": "sigtap",
+      "maturity": "IMPLEMENTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": null,
+      "evidence": [
+        "SOA_CNES_READINESS_SIGTAP_2026-08-22.md"
+      ],
+      "sources": [
+        "https://wiki.saude.gov.br/sigtap/index.php/Gerais"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "obm",
+      "domain": "sus",
+      "name": "OBM — Ontologia Brasileira de Medicamentos",
+      "adapter": "obm",
+      "maturity": "IMPLEMENTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": null,
+      "evidence": [
+        "docs/public-sector/OBM_INTEGRATION.md"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/composicao/sectics/daf/bnafar/faq/faq"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "bnafar",
+      "domain": "sus",
+      "name": "SI-BNAFAR — transmissão D-1 de entradas, saídas e dispensações",
+      "adapter": "bnafar",
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "contrato técnico e credencial do ente; circuito completo ainda não construído",
+      "evidence": [],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/composicao/sectics/daf/bnafar/faq/faq",
+        "https://www.gov.br/saude/pt-br/composicao/sectics/daf/bnafar/faq/faq/o-que-foi-estabelecido-pela-1"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "sia.bpa",
+      "domain": "sus",
+      "name": "SIA — BPA-C / BPA-I",
+      "adapter": null,
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "gerador e pré-glosa ainda não construídos",
+      "evidence": [],
+      "sources": [
+        "https://wiki.saude.gov.br/sia/index.php/P%C3%A1gina_principal"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "sia.apac_raas",
+      "domain": "sus",
+      "name": "SIA — APAC / RAAS",
+      "adapter": null,
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "não construído",
+      "evidence": [],
+      "sources": [
+        "https://wiki.saude.gov.br/sia/index.php/P%C3%A1gina_principal"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "sih.aih",
+      "domain": "sus",
+      "name": "SIH — AIH",
+      "adapter": null,
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "não construído",
+      "evidence": [],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/acesso-a-informacao/gestao-do-sus/programacao-regulacao-controle-e-financiamento-da-mac/sistemas-de-informacao-em-saude"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "regulation.sisreg",
+      "domain": "sus",
+      "name": "SISREG / e-SUS Regulação — leitura e reconciliação do protocolo externo",
+      "adapter": "sisreg",
+      "maturity": "TESTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "ENVIO da solicitação depende de credencial e contrato de interface",
+      "evidence": [
+        "RegulationTransitionTrailIntegrationTests",
+        "REGULATION_INTEGRATION_ARCHITECTURE.md"
+      ],
+      "sources": [
+        "https://www.gov.br/saude/pt-br/acesso-a-informacao/gestao-do-sus/programacao-regulacao-controle-e-financiamento-da-mac/sistemas-de-informacao-em-saude"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "pec.external",
+      "domain": "sus",
+      "name": "PEC de terceiro — lançamento assinado (launch_only)",
+      "adapter": "pec",
+      "maturity": "IMPLEMENTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "leitura/escrita dependem do contrato técnico do PEC do município",
+      "evidence": [
+        "PEC_EXTERNAL_SYSTEM_INTEGRATION.md"
+      ],
+      "sources": [],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "si-pni",
+      "domain": "sus",
+      "name": "SI-PNI — registro oficial de vacinação",
+      "adapter": null,
+      "maturity": "PLANEJADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "fronteira declarada; vacinação segue local_only",
+      "evidence": [],
+      "sources": [],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "tiss",
+      "domain": "private-health",
+      "name": "ANS — Padrão TISS (componentes organizacional, conteúdo, comunicação)",
+      "adapter": null,
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "não construído; XSD oficial da versão vigente não está no repositório",
+      "evidence": [],
+      "sources": [
+        "https://www.gov.br/ans/pt-br/assuntos/prestadores/padrao-para-troca-de-informacao-de-saude-suplementar-2013-tiss"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "tuss",
+      "domain": "private-health",
+      "name": "ANS — TUSS (terminologia)",
+      "adapter": null,
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "não construído",
+      "evidence": [],
+      "sources": [
+        "https://www.gov.br/ans/pt-br/assuntos/prestadores/padrao-para-troca-de-informacao-de-saude-suplementar-2013-tiss/codigos-da-tuss"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "icp-brasil.pades",
+      "domain": "documents",
+      "name": "ICP-Brasil — assinatura PAdES e validação de cadeia",
+      "adapter": "icp-brasil",
+      "maturity": "TESTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "validação externa (ITI) da implementação não registrada",
+      "evidence": [
+        "ADR-004-icp-brasil-digital-signature.md"
+      ],
+      "sources": [],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "serpro.tsa",
+      "domain": "documents",
+      "name": "SERPRO — carimbo de tempo (ACT)",
+      "adapter": "serpro-tsa",
+      "maturity": "IMPLEMENTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "credencial da ACT",
+      "evidence": [
+        "ADR-007-icp-brasil-timestamp-serpro.md"
+      ],
+      "sources": [],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "anvisa.sncr",
+      "domain": "documents",
+      "name": "Anvisa SNCR — numeração de receituário controlado",
+      "adapter": "sncr",
+      "maturity": "IMPLEMENTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "homologação conforme SNCR_HOMOLOGATION_RUNBOOK.md",
+      "evidence": [
+        "SNCR_ANVISA_READINESS.md"
+      ],
+      "sources": [],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "dicomweb.pacs",
+      "domain": "diagnostics",
+      "name": "DICOMweb / PACS — telediagnóstico",
+      "adapter": "dicomweb",
+      "maturity": "TESTADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "PACS do contratante",
+      "evidence": [
+        "TelediagnosticEndToEndIntegrationTests"
+      ],
+      "sources": [],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "hl7v2",
+      "domain": "interoperability",
+      "name": "HL7 v2 (ADT/ORM/ORU)",
+      "adapter": null,
+      "maturity": "PLANEJADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "fronteira declarada; contrato técnico do parceiro",
+      "evidence": [],
+      "sources": [],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "sbis.sres",
+      "domain": "certification",
+      "name": "SBIS S-RES — certificação do PEP",
+      "adapter": null,
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "avaliação externa; MATRIZ_NGS2_SRES.md registra a aderência pretendida",
+      "evidence": [
+        "docs/compliance/MATRIZ_NGS2_SRES.md"
+      ],
+      "sources": [
+        "https://sbis.org.br/certificacoes/certificacao-software/categorias-e-modalidades-certificaveis/"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    },
+    {
+      "id": "anvisa.samd",
+      "domain": "certification",
+      "name": "ANVISA RDC 657/2022 — enquadramento de Software como Dispositivo Médico",
+      "adapter": null,
+      "maturity": "NÃO COMPROVADO",
+      "homologated": false,
+      "production": false,
+      "blocker": "avaliação regulatória por funcionalidade de IA clínica antes de release (§13.7)",
+      "evidence": [],
+      "sources": [
+        "https://www.gov.br/anvisa/pt-br/centraisdeconteudo/publicacoes/produtos-para-a-saude/manuais/software-como-dispositivo-medico-perguntas-e-respostas"
+      ],
+      "valid_until": null,
+      "review_by": "2026-12-31"
+    }
+  ]
+}

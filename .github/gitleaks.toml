@@ -1,0 +1,81 @@
+# RenoveJá+ — configuração do gitleaks.
+#
+# Complementa o .gitleaksignore. A divisão é intencional:
+#
+#   .gitleaks.toml   caminhos que nunca devem ser varridos (build, dependência)
+#   .gitleaksignore  achados específicos, um por impressão digital
+#
+# Motivo: a impressão digital de um achado carrega o nome do arquivo, e nome de
+# arquivo de build tem hash de conteúdo (`Index-D2-5LZZR.js.map`). A cada build
+# o hash muda, a impressão digital muda junto e a entrada no .gitleaksignore
+# vira lixo silencioso. Caminho é estável; achado individual não é.
+
+[extend]
+# Mantém as ~170 regras padrão do gitleaks. Este arquivo só acrescenta.
+useDefault = true
+
+[allowlist]
+description = "Caminhos que não são código-fonte deste repositório"
+paths = [
+  # Artefatos de build. São gitignorados e nunca chegam ao repositório, mas o
+  # `gitleaks dir` varre o disco, não o índice do git — e a pasta existe na
+  # máquina de quem acabou de rodar `npm run build`. O segredo que porventura
+  # aparecesse aqui viria do fonte, que continua sendo varrido.
+  '''(^|/)dist/''',
+  '''(^|/)build/''',
+  '''(^|/)coverage/''',
+  '''(^|/)\.expo/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)bin/(Debug|Release)/''',
+  '''(^|/)obj/''',
+  # Catálogo construído pelo Storybook (`npm run build-storybook`): bundle minificado, com
+  # nome de arquivo por hash. As histórias, que são fonte, continuam varridas.
+  '''(^|/)storybook-static/''',
+
+  # Projeto nativo gerado por `expo prebuild`. Regenerado a cada build.
+  '''^frontend-mobile/android/(app/build|build|\.gradle)/''',
+  '''^frontend-mobile/ios/(build|Pods)/''',
+]
+
+# Valores públicos e constantes que a varredura casa por entropia.
+#
+# Por que aqui e não no .gitleaksignore: a impressão digital de um achado é
+# `<arquivo>:<regra>:<LINHA>`, e a linha muda quando alguém acrescenta algo acima. O
+# placeholder do `.env.example` já migrou de :34 para :80 e daí para :116 — a cada mudança
+# o portão voltou a acusar um "segredo" que é, literalmente, o base64 de
+# "devOnlyKeyNotForProductionUse=1". O valor é constante; a linha não é.
+#
+# A regra vale só para este literal exato. Um segredo de verdade no mesmo arquivo continua
+# sendo acusado.
+# `regexTarget = "match"` e não o padrão (`secret`): o que precisa ser reconhecido abaixo é
+# o SHA da imagem no CONTEXTO em que ele aparece — `renoveja-api:<sha>` —, e o padrão testaria
+# só o miolo que a regra extraiu, que é o SHA nu. Allowlistar SHA nu liberaria qualquer valor
+# de 40 hexadecimais no repositório inteiro, que é exatamente o que não se quer.
+#
+# O literal base64 logo abaixo continua valendo: ele aparece inteiro dentro do trecho casado.
+regexTarget = "match"
+regexes = [
+  '''ZGV2T25seUtleU5vdEZvclByb2R1Y3Rpb25Vc2U9MQ==''',
+
+  # Tag da imagem no ECR — é o SHA do commit publicado, e SHA de commit é público
+  # por definição (está no `git log`, no GitHub e no `docker images` de quem clonou).
+  #
+  # A regra `generic-api-key` casa por VIZINHANÇA: `renoveja-api:` termina em "api:" e
+  # 40 caracteres hexadecimais têm entropia de chave. Toda nota de deploy que registre
+  # qual imagem subiu reprova o portão — e a nota de deploy é justamente o documento
+  # que precisa dizer isso, senão "qual commit está no ar" deixa de ter resposta escrita.
+  #
+  # O recorte é estreito de propósito: só o nome DESTE repositório de imagem seguido de
+  # um SHA completo. Um segredo de verdade no mesmo arquivo continua sendo acusado, e um
+  # `api_key: <40 hex>` sem o prefixo também.
+  '''renoveja-api:[0-9a-f]{40}''',
+
+  # `prompt_cache_key` da OpenAI: identificador público e versionado do shard de cache
+  # ("renoveja-conduct-suggestion-v1"), não credencial. Estava no .gitleaksignore por linha
+  # e a linha andou (:111 → :122) — mesmo motivo do placeholder acima. Só o prefixo do
+  # produto seguido de nome em minúsculas: uma chave de verdade não tem esse formato.
+  '''prompt_?[cC]ache_?[kK]ey\s*[:=]\s*"renoveja-[a-z0-9-]+"''',
+
+  # Constante de teste: base64 de "this is a valid refresh token". Não abre nada.
+  '''dGhpcyBpcyBhIHZhbGlkIHJlZnJlc2ggdG9rZW4''',
+]

@@ -1,0 +1,61 @@
+# Atualização de dependências.
+#
+# MENSAL, não semanal, e com teto baixo de PRs abertos — a cadência herdada do
+# repositório legado, mantida aqui por medida: cada execução do Dependabot custa
+# minutos de CI cobrados, e cada PR aberto dispara o ci.yml inteiro.
+#
+# O que NÃO muda: alerta de segurança do Dependabot é outro caminho, não passa
+# por este arquivo e continua chegando na hora. Aqui só se decide a cadência da
+# atualização de versão de rotina.
+
+version: 2
+updates:
+  # "github-actions" fora de propósito: as actions estão fixadas e mudam devagar.
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "security"
+    groups:
+      root-npm:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/apps/api"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "security"
+    groups:
+      api:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "security"
+    groups:
+      web:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "security"

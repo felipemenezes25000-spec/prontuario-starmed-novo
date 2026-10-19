@@ -40,6 +40,38 @@ prompts/            # Especificação de IA clínica
 docker-compose.yml  # PostgreSQL local
 ```
 
+## Ativos resgatados do legado (repo `starmed`)
+
+Integração de material aproveitado do repositório anterior (produto RenoveJa + trabalhos
+StarMed), curado — nada foi copiado em bloco:
+
+- `docs/STARMED-MASTER-SPEC.md` — especificação normativa do produto (46 capítulos):
+  modelo clínico canônico, MPI, packs SUS/hospitalar, interoperabilidade, IA, UX,
+  segurança, roadmap e definition of done.
+- `docs/regulatory/` — registro de compatibilidade regulatória (RNDS, TISS, ICP-Brasil,
+  SNCR, SBIS/NGS2, SaMD), matriz NGS2/S-RES, roadmap de certificações, conformidade
+  jurídica de documentos clínicos (PAdES), governança de IA (CFM 2.454/2026), checklist
+  LGPD/ANPD, políticas de backup, acesso, criptografia e resposta a incidentes.
+- `docs/` — regras de negócio (RX/EX/DC), motor de segurança medicamentosa,
+  máquina de estados da receita.
+- `docs/references/` — arquitetura Health OS, guias legados de PAdES/ICP-Brasil, fluxo de
+  receita e IA, KMS; `design-system/` (tokens + guia de telas) e documentos-modelo de
+  receita/pedido/atestado com QR.
+- `scripts/` — `rnds/validate-fhir.mjs`, `dr/local-restore-drill.mjs`, `security/`
+  (SBOM, ZAP autenticado, triagem de histórico de segredos), `icp-brasil/` (raízes e
+  políticas PAdES), `sql/purge_transactional_data.sql` (LGPD).
+- `.github/` — CI (testes + build + smoke), CodeQL, Gitleaks, dependabot mensal,
+  template de PR.
+
+Dívidas do legado deliberadamente **não** herdadas: trust store ICP-Brasil sem raízes e
+TSA desligado, workflows de deploy AWS/RenoveJa, branding e material comercial.
+
+## Estado de verificação (linha de base desta integração)
+
+- `npm install` — ok (npm workspaces).
+- `npm test` (API) — 9/9 testes de domínio passando.
+- `npm run build` — API + Web compilando (corrigido `React` UMD em `apps/web/src/main.tsx`).
+
 ## Próximas etapas prioritárias
 - Login corporativo via OIDC/MFA, sessões e revogação, rate limit distribuído, gestão de acesso clínico e infraestrutura com TLS.
 - Migrações versionadas, testes Postgres e E2E, backup/restore, observabilidade, segurança ofensiva e proteção dos dispositivos.

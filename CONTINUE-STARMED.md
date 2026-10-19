@@ -146,6 +146,20 @@ XSD oficial ANS do TISS; provedor OIDC e credencial SERPRO reais; worker de envi
 CRM/WhatsApp (outbox nasce desligado); RLS em PostgreSQL na implantação; frontend das
 frentes em `apps/web` (o objetivo desta sessão foi `apps/api`); testes cross-tenant.
 
+## CONTINUAÇÃO (19/10/2026, mesma data) — dívidas sendo fechadas
+
+10. **TISS fechado** — XSDs oficiais ANS 4.01.00 em `schemas/tiss/4.01.00/` (7 arquivos,
+    FONTE.md com hashes conferidos), builder `tiss.ts` reescrito para `mensagemTISS`
+    4.01.00 e **validado de verdade** contra o esquema (`scripts/tiss/validate-tiss.ps1`,
+    positivo VALIDO + negativo INVALIDO exit=1). Commit `ae02ca6`.
+11. **Worker CRM fechado** — `scripts/crm/dispatch-outbox.mjs` (FOR UPDATE SKIP LOCKED;
+    2xx→sent, 429/5xx→retry, 4xx→failed; nasce desligado sem CRM_PROVIDER_URL) + 3 testes
+    puros; modo desligado verificado contra banco real (reportou fila, enviou zero).
+12. **RLS opt-in fechado** — `database/014_rls_optin.sql` (ENABLE sem FORCE + policies
+    org_id em 30 tabelas; comportamento do owner não afetado) + **drill E2E real**
+    `scripts/rls/cross-tenant-drill.mjs`: org A→404 no recurso da org B; org B→200 no
+    próprio e 404 no da org A. PASSOU.
+
 ## EM ABERTO (continuar daqui)
 
 ### A. Sete frentes para passar os concorrentes — CONTRATO PRONTO, IMPLEMENTAÇÃO NÃO

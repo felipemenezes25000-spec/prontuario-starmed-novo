@@ -17,6 +17,7 @@ import { InteropController } from './interop/interop.controller';
 import { TeleconsultController } from './teleconsult';
 import { AiClinicalController } from './ai-clinical';
 import { StaffPortalController, PatientPortalController } from './portal';
+import { LgpdController, PatientLgpdController } from './lgpd';
 import { HospitalController } from './hospital';
 import { ProductController } from './product';
 import { assertSecurityConfig } from './config';
@@ -26,7 +27,8 @@ import { assertSecurityConfig } from './config';
     HealthController,AuthController,UsersController,PatientsController,AppointmentsController,EncountersController,
     ClinicalAddendaController,AllergiesController,ProblemsController,FhirController,AiController,MfaController,SsoController,
     FhirExtraController,SmartWellKnownController,SignatureController,SignatureVerifyController,InteropController,
-    TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController
+    TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController,
+    LgpdController,PatientLgpdController
   ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]
 })

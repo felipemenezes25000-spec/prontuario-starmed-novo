@@ -118,6 +118,12 @@ Portas ocupadas por terceiros: 5432 (backend-dotnet), 5173 (processo alheio). Us
      build API+Web verde, migrações 002–012 aplicadas em PG16 descartável, smoke E2E
      real em :3102 (capability, SMART, CDS warfarina+AINA, HL7 ack AA, TISS XML,
      portal invite→activate→login→documents, RBAC, métricas).
+8. **Frente 3 (LGPD) concluída** — `lgpd.ts` + `database/013_lgpd.sql`: pedidos de
+   direitos do titular (acesso/portabilidade com pacote de exportação, correção de
+   campos permitidos, exclusão/anonimização com recusa auditada quando há prontuário
+   assinado — art. 16/I, revogação de consentimento), consentimento versionado
+   append-only por finalidade, endpoints staff (/lgpd/*) e do próprio titular
+   (/portal/me/consents e /portal/me/lgpd/requests). `npm test` **107/107 verdes**.
 
 ## EM ABERTO (continuar daqui)
 

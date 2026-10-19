@@ -53,3 +53,7 @@ Referências oficiais:
 - `patient_conditions`: problemas clínicos codificados opcionalmente com um URI de sistema de códigos, verificação e data de início; criação restrita a médico.
 - Endpoints autenticados `GET/POST /patients/:patientId/allergies` e `GET/POST /patients/:patientId/problems`, sempre filtrados por organização.
 - São registros históricos básicos e não substituem reconciliação medicamentosa, checagem de interações, prescrições ou protocolos; é obrigatório revisar a informação antes de condutas clínicas.
+
+## Mapeamentos FHIR R4 de leitura (parciais)
+Os endpoints adicionais `GET /fhir/R4/AllergyIntolerance/:id` e `GET /fhir/R4/Condition/:id` expõem representações básicas dos novos registros, com status clínico/confirmatório `CodeableConcept`, referências de paciente e registro de autoria. Consultas autenticadas por médico/enfermagem e isolamento por organização. **Não** há validação oficial de perfil FHIR, buscas por parâmetro, recursos completos, CapabilityStatement, histórico/_search, resolvibilidade Practitioner ou implementação SMART on FHIR.
+Referências HL7 R4: https://hl7.org/fhir/R4/allergyintolerance.html e https://hl7.org/fhir/R4/condition.html

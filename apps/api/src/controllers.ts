@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Put, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
 import { Db } from './db';
+import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } from './fhir-mappers';
 import { Actor, audit, hashPassword, issueToken, requireRole, verifyPassword } from './security';
 import { aiSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, signSchema, uuid } from './domain';
 
@@ -223,6 +224,24 @@ export class FhirController {
     await audit(this.db,actor,'fhir.encounter.read','encounter',id);
     const e=r.rows[0];
     return {resourceType:'Encounter',id:e.id,status:e.status,class:{system:'http://terminology.hl7.org/CodeSystem/v3-ActCode',code:e.type==='teleconsultation'?'VR':'AMB'},subject:{reference:'Patient/'+e.patient_id},participant:[{individual:{reference:'Practitioner/'+e.doctor_id}}],period:{start:e.started_at,end:e.ended_at??undefined},reasonCode:e.reason_for_visit?[{text:e.reason_for_visit}]:[]};
+  }
+  @Get('AllergyIntolerance/:id')
+  async allergy(@Req() req:R,@Param('id') rawId:string) {
+    const actor=a(req);requireRole(actor,['doctor','nurse']);
+    const id=parse(uuid,rawId);
+    const r=await this.db.query<AllergyRow>('SELECT * FROM patient_allergies WHERE org_id=$1 AND id=$2',[actor.org_id,id]);
+    if(!r.rowCount)throw new NotFoundException();
+    await audit(this.db,actor,'fhir.allergy.read','patient',r.rows[0].patient_id);
+    return toFhirAllergy(r.rows[0]);
+  }
+  @Get('Condition/:id')
+  async condition(@Req() req:R,@Param('id') rawId:string) {
+    const actor=a(req);requireRole(actor,['doctor','nurse']);
+    const id=parse(uuid,rawId);
+    const r=await this.db.query<ConditionRow>('SELECT * FROM patient_conditions WHERE org_id=$1 AND id=$2',[actor.org_id,id]);
+    if(!r.rowCount)throw new NotFoundException();
+    await audit(this.db,actor,'fhir.condition.read','patient',r.rows[0].patient_id);
+    return toFhirCondition(r.rows[0]);
   }
 }
 @Controller('ai')

@@ -1,0 +1,288 @@
+import { useEffect, useState, type FormEvent } from 'react';
+import { Activity, AlertCircle, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, HeartPulse, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, WifiOff, X } from 'lucide-react';
+import { api, ApiError, type Session, type Patient, type Encounter, type ClinicalNote, type Doctor, type Appointment } from './api';
+import { specialties, type Specialty } from './specialties';
+import { pendingCount, queueDraft, syncDrafts } from './offline';
+
+type View='dashboard'|'patients'|'record'|'agenda'|'team'|'assistant';
+type Banner={text:string;kind:'success'|'error'|'info'};
+type Draft={expectedVersion:number;operationId:string;templateId:string;sections:Record<string,string>};
+const mkId=()=>crypto.randomUUID();
+const fmt=(value:string)=>new Date(value).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
+function IconMark(){return <div className="brand-mark"><HeartPulse size={22} strokeWidth={2.5}/></div>;}
+function Access({onLogin}:{onLogin:(session:Session)=>void}){
+  const [email,setEmail]=useState(''),[password,setPassword]=useState('');
+  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function submit(e:FormEvent){
+    e.preventDefault();setBusy(true);setError('');
+    try {const session=await api<Session>('/auth/login',null,'POST',{email,password});onLogin(session);}
+    catch(e){setError((e as Error).message);}
+    finally{setBusy(false);}
+  }
+  return <div className="login-layout">
+    <div className="login-illustration">
+      <div className="brand-row"><IconMark/><span>StarMed</span></div>
+      <div className="intro-copy"><span className="eyebrow-light">PRONTUÁRIO ELETRÔNICO</span>
+        <h1>O cuidado é humano.<br/>A tecnologia acompanha.</h1>
+        <p>Documentação clínica, fluxos inteligentes e o histórico do paciente em um só lugar.</p>
+      </div>
+      <div className="login-foot"><ShieldCheck size={19}/> Acesso restrito a profissionais autorizados</div>
+    </div>
+    <div className="login-form-shell"><div className="login-panel">
+      <div className="small-icon"><LockKeyhole size={23}/></div>
+      <h2>Acesse seu ambiente</h2><p>Entre com as credenciais do StarMed.</p>
+      <form onSubmit={submit} className="stack gap-4 mt-8">
+        <label>E-mail institucional<input required type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="voce@instituicao.com.br"/></label>
+        <label>Senha<input required type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Sua senha"/></label>
+        {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
+        <button disabled={busy} className="primary-button" type="submit">{busy?'Autenticando…':'Entrar no sistema'} <ArrowRight size={18}/></button>
+      </form>
+      <p className="security-note">Ambiente inicial de desenvolvimento. Não inserir dados reais de pacientes antes da homologação de segurança e privacidade.</p>
+    </div></div>
+  </div>;
+}
+function Nav({view,onView,role}:{view:View;onView:(v:View)=>void;role:string}){
+  const items:{key:View;label:string;icon:typeof Activity;allowed:boolean}[]=[
+    {key:'dashboard',label:'Visão geral',icon:LayoutDashboard,allowed:true},
+    {key:'patients',label:'Pacientes',icon:Users,allowed:true},
+    {key:'record',label:'Prontuário',icon:ClipboardList,allowed:role==='doctor'||role==='nurse'},
+    {key:'agenda',label:'Agenda',icon:CalendarDays,allowed:true},
+    {key:'assistant',label:'Assistente de IA',icon:Sparkles,allowed:role==='doctor'},
+    {key:'team',label:'Equipe',icon:Stethoscope,allowed:role==='admin'}
+  ];
+  return <nav className="sidebar-menu">{items.filter(x=>x.allowed).map(x=>{
+    const Icon=x.icon;
+    return <button key={x.key} className={'nav-item '+(view===x.key?'active':'')} onClick={()=>onView(x.key)}><Icon size={19}/>{x.label}</button>;
+  })}</nav>;
+}
+export default function App(){
+  const [session,setSession]=useState<Session|null>(null);
+  const [view,setView]=useState<View>('dashboard');
+  const [banner,setBanner]=useState<Banner|null>(null);
+  const [patients,setPatients]=useState<Patient[]>([]);
+  const [appointments,setAppointments]=useState<Appointment[]>([]);
+  const [staff,setStaff]=useState<Doctor[]>([]);
+  const [patientQuery,setPatientQuery]=useState('');
+  const [patient,setPatient]=useState<Patient|null>(null);
+  const [encounters,setEncounters]=useState<Encounter[]>([]);
+  const [encounter,setEncounter]=useState<Encounter|null>(null);
+  const [note,setNote]=useState<ClinicalNote|null>(null);
+  const [sections,setSections]=useState<Record<string,string>>({});
+  const [specialty,setSpecialty]=useState<Specialty>('general');
+  const [encounterType,setEncounterType]=useState('consultation');
+  const [reason,setReason]=useState('');
+  const [newPatient,setNewPatient]=useState({fullName:'',birthDate:'',administrativeGender:'unknown'});
+  const [newStaff,setNewStaff]=useState({displayName:'',email:'',role:'doctor',password:''});
+  const [appForm,setAppForm]=useState({patientId:'',practitionerId:'',scheduledAt:'',durationMinutes:30,kind:'consultation'});
+  const [passphrase,setPassphrase]=useState('');
+  const [pending,setPending]=useState(0);
+  const [transcript,setTranscript]=useState('');
+  const [aiResult,setAiResult]=useState<unknown>(null);
+  const [loading,setLoading]=useState(false);
+  const token=session?.accessToken??null;
+  const user=session?.user;
+  const isDoctor=user?.role==='doctor';
+  function alert(text:string,kind:Banner['kind']='info'){setBanner({text,kind});}
+  async function loadLists(current:Session){
+    try {
+      const [p,ap,us]=await Promise.all([
+        api<Patient[]>('/patients',current.accessToken),
+        api<Appointment[]>('/appointments',current.accessToken),
+        api<Doctor[]>('/users',current.accessToken).catch(()=>[] as Doctor[])
+      ]);
+      setPatients(p);setAppointments(ap);setStaff(us);
+    }catch(e){alert((e as Error).message,'error');}
+  }
+  useEffect(()=>{if(session)void loadLists(session);},[session]);
+  useEffect(()=>{
+    if(user){void pendingCount(user.orgId,user.id).then(setPending).catch(()=>{});}
+  },[user]);
+  async function openPatient(p:Patient){
+    if(!token)return;
+    setPatient(p);setEncounter(null);setNote(null);setSections({});setView('record');
+    try {setEncounters(await api<Encounter[]>('/encounters?patientId='+encodeURIComponent(p.id),token));}
+    catch(e){alert((e as Error).message,'error');}
+  }
+  async function openEncounter(e:Encounter){
+    if(!token)return;
+    setEncounter(e);setSpecialty((e.specialty in specialties?e.specialty:'general') as Specialty);
+    try {
+      const current=await api<ClinicalNote|null>('/encounters/'+e.id+'/notes',token);
+      setNote(current);setSections(current?.content?.sections??{});
+    } catch(err){alert((err as Error).message,'error');}
+  }
+  async function createPatient(e:FormEvent){
+    e.preventDefault();if(!token||!session)return;
+    setLoading(true);
+    try {
+      const created=await api<Patient>('/patients',token,'POST',newPatient);
+      await loadLists(session);
+      setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown'});
+      alert('Paciente cadastrado.','success');
+      if(isDoctor)await openPatient(created);
+    }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
+  }
+  async function createEncounter(e:FormEvent){
+    e.preventDefault();if(!token||!patient)return;
+    try {
+      const created=await api<Encounter>('/encounters',token,'POST',{patientId:patient.id,specialty,type:encounterType,reasonForVisit:reason});
+      setEncounters(old=>[created,...old]);setReason('');await openEncounter(created);
+      alert('Atendimento iniciado.','success');
+    }catch(err){alert((err as Error).message,'error');}
+  }
+  function draftPayload():Draft{
+    return {operationId:mkId(),templateId:encounter?.specialty||specialty,expectedVersion:note?.version??0,sections};
+  }
+  async function saveDraft(offline=false){
+    if(!token||!encounter||!user)return;
+    const b=draftPayload();setLoading(true);
+    try {
+      if(offline){
+        await queueDraft(user.orgId,user.id,encounter.id,b,passphrase);
+        setPending(await pendingCount(user.orgId,user.id));
+        alert('Rascunho armazenado localmente com criptografia. Sincronize após reconexão.','success');
+        return;
+      }
+      const saved=await api<ClinicalNote>('/encounters/'+encounter.id+'/notes/draft',token,'PUT',b);
+      setNote(saved);alert('Evolução salva no servidor.','success');
+    }catch(err){
+      const message=(err as Error).message;
+      alert(message,'error');
+    }finally{setLoading(false);}
+  }
+  async function signNote(){
+    if(!token||!encounter||!isDoctor)return;
+    if(!window.confirm('Confirma a revisão clínica e atestação? Uma nota assinada torna-se imutável. Salve as alterações antes.'))return;
+    setLoading(true);
+    try {
+      const signed=await api<ClinicalNote>('/encounters/'+encounter.id+'/notes/sign',token,'POST');
+      setNote(signed);setSections(signed.content.sections);alert('Nota atestada e bloqueada para edição. Esta ação não é assinatura digital ICP-Brasil.','success');
+    }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
+  }
+  async function syncNow(){
+    if(!token||!user)return;
+    setLoading(true);
+    try {
+      const result=await syncDrafts(user.orgId,user.id,passphrase,(id,payload)=>api<ClinicalNote>('/encounters/'+id+'/notes/draft',token,'PUT',payload));
+      setPending(await pendingCount(user.orgId,user.id));
+      if(encounter)await openEncounter(encounter);
+      alert(result.sent+' rascunho(s) sincronizado(s); '+result.conflicts+' conflito(s). Conflitos exigem revisão manual.',result.conflicts?'error':'success');
+    }catch(e){alert((e as Error).message,'error');}finally{setLoading(false);}
+  }
+  async function createAppointment(e:FormEvent){
+    e.preventDefault();if(!token||!session)return;
+    try {
+      await api('/appointments',token,'POST',{patientId:appForm.patientId,practitionerId:appForm.practitionerId,scheduledAt:new Date(appForm.scheduledAt).toISOString(),durationMinutes:Number(appForm.durationMinutes),kind:appForm.kind});
+      await loadLists(session);alert('Agendamento criado.','success');
+    }catch(err){alert((err as Error).message,'error');}
+  }
+  async function createStaff(e:FormEvent){
+    e.preventDefault();if(!token||!session)return;
+    try{
+      await api('/users',token,'POST',newStaff);
+      setNewStaff({displayName:'',email:'',role:'doctor',password:''});await loadLists(session);
+      alert('Profissional cadastrado.','success');
+    }catch(err){alert((err as Error).message,'error');}
+  }
+  async function askAI(e:FormEvent){
+    e.preventDefault();if(!token)return;
+    setLoading(true);setAiResult(null);
+    try{
+      const response=await api<{suggestion:unknown;status:string}>('/ai/extract',token,'POST',{transcript});
+      setAiResult(response.suggestion);alert('Sugestão recebida. Revise todos os campos antes de registrar.','info');
+    }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
+  }
+  if(!session)return <Access onLogin={setSession}/>;
+  return <div className="app-shell">
+    <aside className="sidebar">
+      <div className="brand-row"><IconMark/><span>StarMed</span></div>
+      <div className="sidebar-caption">AMBIENTE CLÍNICO</div>
+      <Nav view={view} onView={setView} role={user!.role}/>
+      <div className="sidebar-bottom">
+        <div className="environment-note"><ShieldCheck size={17}/><span>MVP de desenvolvimento<br/>Não homologado para produção</span></div>
+        <button className="logout-button" onClick={()=>{setSession(null);setPassphrase('');setTranscript('');setAiResult(null);setPatient(null);setEncounter(null);setNote(null);}}><LogOut size={17}/> Sair</button>
+      </div>
+    </aside>
+    <div className="workspace">
+      <header className="topbar">
+        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{view==='dashboard'?'Visão geral':view==='record'?'Prontuário':view==='patients'?'Pacientes':view==='agenda'?'Agenda':view==='team'?'Equipe':'Assistente de IA'}</strong></div>
+        <div className="topbar-right"><span className="status-dot"/> Ambiente conectado <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
+      </header>
+      <main className="content">
+        {banner&&<div className={'notice '+banner.kind}><span>{banner.kind==='error'?<AlertCircle size={17}/>:<CheckCircle2 size={17}/>}</span><span>{banner.text}</span><button aria-label="Fechar aviso" onClick={()=>setBanner(null)}><X size={17}/></button></div>}
+        {view==='dashboard'&&<section>
+          <div className="hero"><div><span className="eyebrow">PAINEL DE ATENDIMENTO</span><h1>Bom atendimento começa<br/>com informação clara.</h1><p>Bem-vindo ao StarMed. Acompanhe os registros da sua organização.</p><button className="hero-button" onClick={()=>setView('patients')}>Consultar pacientes <ArrowRight size={17}/></button></div><div className="hero-graphic"><div className="pulse-ring"><HeartPulse size={80} strokeWidth={1.2}/></div></div></div>
+          <div className="stat-grid"><div className="stat-card"><Users size={20}/><span>Pacientes cadastrados</span><strong>{patients.length}</strong><small>Até 50 resultados na busca atual</small></div><div className="stat-card"><CalendarDays size={20}/><span>Agendamentos exibidos</span><strong>{appointments.length}</strong><small>Últimos 7 dias e futuros</small></div><div className="stat-card"><CloudUpload size={20}/><span>Rascunhos offline</span><strong>{pending}</strong><small>Armazenados neste navegador</small></div></div>
+          <div className="dashboard-grid"><div className="panel"><div className="panel-title"><h2>Próximos agendamentos</h2><button className="text-button" onClick={()=>setView('agenda')}>Ver agenda <ArrowRight size={15}/></button></div>{appointments.length===0?<p className="muted empty-state">Nenhum agendamento encontrado.</p>:appointments.slice(0,4).map(a=><div className="list-line" key={a.id}><div className="list-icon"><CalendarDays size={18}/></div><div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {a.kind}</small></div><span className="small-pill">{a.status}</span></div>)}</div>
+          <div className="panel"><div className="panel-title"><h2>Fluxo clínico</h2></div><div className="flow-line"><div className="step-num">1</div><div><strong>Identifique o paciente</strong><p>Localize ou cadastre um registro.</p></div></div><div className="flow-line"><div className="step-num">2</div><div><strong>Inicie o atendimento</strong><p>Selecione a especialidade e registre a queixa.</p></div></div><div className="flow-line"><div className="step-num">3</div><div><strong>Revise e ateste</strong><p>Valide os achados e assine a evolução online.</p></div></div></div></div>
+        </section>}
+        {view==='patients'&&<section>
+          <div className="page-heading"><div><span className="eyebrow">GESTÃO CLÍNICA</span><h1>Pacientes</h1><p>Pesquise e organize os cadastros da sua organização.</p></div></div>
+          <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Pacientes cadastrados</h2><span className="small-pill">{patients.length} encontrados</span></div>
+            <div className="search-field"><Search size={17}/><input placeholder="Buscar por nome" value={patientQuery} onChange={e=>setPatientQuery(e.target.value)}/><button onClick={async()=>{if(token)setPatients(await api<Patient[]>('/patients?q='+encodeURIComponent(patientQuery),token));}}>Buscar</button></div>
+            <div className="patient-list">{patients.length===0?<div className="empty-state">Nenhum paciente encontrado.</div>:patients.map(p=><button className="patient-row" key={p.id} onClick={()=>user?.role==='doctor'||user?.role==='nurse'?openPatient(p):alert('Prontuário clínico é restrito à equipe assistencial.','info')}><div className="patient-avatar">{p.fullName[0]?.toUpperCase()}</div><div><strong>{p.fullName}</strong><small>Nascimento: {String(p.birthDate).slice(0,10).split('-').reverse().join('/')}</small></div><ArrowRight size={16}/></button>)}</div>
+          </div>
+          <div className="panel"><div className="panel-title"><h2>Novo paciente</h2><Plus size={20}/></div><form className="stack gap-4" onSubmit={createPatient}>
+            <label>Nome completo<input required minLength={2} value={newPatient.fullName} onChange={e=>setNewPatient({...newPatient,fullName:e.target.value})} placeholder="Nome do paciente"/></label>
+            <label>Data de nascimento<input required type="date" value={newPatient.birthDate} onChange={e=>setNewPatient({...newPatient,birthDate:e.target.value})}/></label>
+            <label>Gênero administrativo<select value={newPatient.administrativeGender} onChange={e=>setNewPatient({...newPatient,administrativeGender:e.target.value})}><option value="unknown">Não informado</option><option value="female">Feminino</option><option value="male">Masculino</option><option value="other">Outro</option></select></label>
+            <button className="primary-button" disabled={loading||user?.role==='nurse'} type="submit"><Plus size={17}/> Criar cadastro</button>
+          </form></div></div>
+        </section>}
+        {view==='record'&&<section>
+          <div className="page-heading"><div><span className="eyebrow">DOCUMENTAÇÃO CLÍNICA</span><h1>Prontuário eletrônico</h1><p>Evoluções estruturadas por especialidade, com revisão médica.</p></div></div>
+          {!patient?<div className="panel empty-state"><ClipboardList size={35}/><h2>Selecione um paciente</h2><p>Comece pela área de pacientes para abrir o prontuário.</p><button className="primary-button" onClick={()=>setView('patients')}>Ir para pacientes <ArrowRight size={16}/></button></div>:
+          <><div className="patient-header"><div className="patient-avatar large">{patient.fullName.slice(0,1).toUpperCase()}</div><div><span className="eyebrow">PACIENTE EM ATENDIMENTO</span><h2>{patient.fullName}</h2><p>Nascimento: {String(patient.birthDate).slice(0,10)}</p></div><span className="small-pill">ID {patient.id.slice(0,8)}</span></div>
+          <div className="record-grid"><div className="stack gap-5"><div className="panel"><div className="panel-title"><h2>Atendimentos</h2><span className="small-pill">{encounters.length}</span></div>
+            {encounters.length===0?<p className="muted">Nenhum atendimento para este paciente.</p>:encounters.map(e=><button className={'encounter-row '+(encounter?.id===e.id?'selected':'')} onClick={()=>void openEncounter(e)} key={e.id}><div className="list-icon"><FilePenLine size={18}/></div><div><strong>{specialties[e.specialty as Specialty]?.name||e.specialty}</strong><small>{fmt(e.started_at)}</small></div><ArrowRight size={16}/></button>)}
+          </div>
+          {isDoctor&&<div className="panel"><div className="panel-title"><h2>Iniciar atendimento</h2><Plus size={19}/></div><form className="stack gap-3" onSubmit={createEncounter}>
+            <label>Especialidade<select value={specialty} onChange={e=>setSpecialty(e.target.value as Specialty)}>{Object.entries(specialties).map(([key,v])=><option key={key} value={key}>{v.name}</option>)}</select></label>
+            <label>Modalidade<select value={encounterType} onChange={e=>setEncounterType(e.target.value)}><option value="consultation">Consulta</option><option value="follow_up">Retorno</option><option value="teleconsultation">Teleconsulta</option><option value="emergency">Urgência</option></select></label>
+            <label>Motivo da consulta<textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Motivo informado para iniciar o atendimento" rows={3}/></label>
+            <button type="submit" className="primary-button"><Plus size={16}/> Iniciar</button>
+          </form></div>}</div>
+          <div className="panel note-panel">{!encounter?<div className="empty-state"><FilePenLine size={35}/><h2>Selecione um atendimento</h2><p>Os campos do prontuário serão carregados conforme a especialidade.</p></div>:<>
+            <div className="panel-title"><div><span className="eyebrow">EVOLUÇÃO MÉDICA</span><h2>{specialties[specialty].name}</h2></div><span className={'small-pill '+(note?.status==='signed'?'pill-signed':'')}>{note?.status==='signed'?'Atestada':note?'Rascunho • v'+note.version:'Nova evolução'}</span></div>
+            <div className="note-fields">{specialties[specialty].fields.map(field=><label key={field.key}>{field.label}{field.required&&<span className="required"> *</span>}<textarea rows={field.key==='hpi'?4:3} disabled={note?.status==='signed'||!isDoctor} value={sections[field.key]??''} onChange={e=>setSections(s=>({...s,[field.key]:e.target.value}))} placeholder={field.placeholder||'Documente os achados relevantes'}/></label>)}</div>
+            {note?.status==='signed'?<div className="signed-message"><ShieldCheck size={19}/> Documento atestado em {note.signed_at?fmt(note.signed_at):'data não informada'}. Edição bloqueada.</div>:isDoctor?<div className="action-row">
+              <button className="secondary-button" disabled={loading} onClick={()=>void saveDraft(true)}><WifiOff size={17}/> Salvar criptografado offline</button>
+              <button className="secondary-button" disabled={loading} onClick={()=>void saveDraft(false)}><CloudUpload size={17}/> Salvar rascunho</button>
+              <button className="primary-button" disabled={loading||!note} onClick={()=>void signNote()}><ShieldCheck size={17}/> Atestar evolução</button>
+            </div>:<p className="muted">Visualização de equipe assistencial. Apenas o médico responsável pode editar e atestar.</p>}
+            <p className="muted footnote">Atestação no banco não substitui assinatura digital legal. Alterações locais precisam ser salvas antes de atestar.</p>
+          </>}</div></div></>}
+        </section>}
+        {view==='agenda'&&<section>
+          <div className="page-heading"><div><span className="eyebrow">ORGANIZAÇÃO</span><h1>Agenda</h1><p>Registros e novos agendamentos por profissional.</p></div></div>
+          <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Agendamentos</h2></div>{appointments.length===0?<div className="empty-state">Nenhuma consulta agendada.</div>:appointments.map(a=><div className="list-line" key={a.id}><div className="list-icon"><CalendarDays size={18}/></div><div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {a.duration_minutes} min • {a.kind}</small></div><span className="small-pill">{a.status}</span></div>)}</div>
+            <div className="panel"><div className="panel-title"><h2>Novo agendamento</h2><Plus size={20}/></div><form className="stack gap-4" onSubmit={createAppointment}>
+              <label>Paciente<select required value={appForm.patientId} onChange={e=>setAppForm({...appForm,patientId:e.target.value})}><option value="">Selecione</option>{patients.map(p=><option key={p.id} value={p.id}>{p.fullName}</option>)}</select></label>
+              <label>Profissional<select required value={appForm.practitionerId} onChange={e=>setAppForm({...appForm,practitionerId:e.target.value})}><option value="">Selecione</option>{staff.filter(s=>s.role==='doctor').map(s=><option key={s.id} value={s.id}>{s.displayName}</option>)}{isDoctor&&!staff.some(s=>s.id===user!.id)&&<option value={user!.id}>Meu usuário</option>}</select></label>
+              <label>Data e hora<input required type="datetime-local" value={appForm.scheduledAt} onChange={e=>setAppForm({...appForm,scheduledAt:e.target.value})}/></label>
+              <label>Tipo<select value={appForm.kind} onChange={e=>setAppForm({...appForm,kind:e.target.value})}><option value="consultation">Consulta</option><option value="follow_up">Retorno</option><option value="teleconsultation">Teleconsulta</option></select></label>
+              <button className="primary-button" type="submit" disabled={user?.role==='nurse'}><Plus size={17}/> Agendar consulta</button>
+            </form></div></div>
+        </section>}
+        {view==='team'&&<section><div className="page-heading"><div><span className="eyebrow">ADMINISTRAÇÃO</span><h1>Equipe</h1><p>Credencie profissionais na organização.</p></div></div>
+          <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Usuários ativos</h2></div>{staff.map(s=><div className="list-line" key={s.id}><div className="patient-avatar">{s.displayName.slice(0,1).toUpperCase()}</div><div><strong>{s.displayName}</strong><small>{s.email}</small></div><span className="small-pill">{s.role}</span></div>)}</div>
+            <div className="panel"><div className="panel-title"><h2>Novo profissional</h2></div><form className="stack gap-4" onSubmit={createStaff}>
+              <label>Nome<input required value={newStaff.displayName} onChange={e=>setNewStaff({...newStaff,displayName:e.target.value})}/></label>
+              <label>E-mail<input required type="email" value={newStaff.email} onChange={e=>setNewStaff({...newStaff,email:e.target.value})}/></label>
+              <label>Perfil<select value={newStaff.role} onChange={e=>setNewStaff({...newStaff,role:e.target.value})}><option value="doctor">Médico</option><option value="nurse">Enfermagem</option><option value="reception">Recepção</option><option value="admin">Administrador</option></select></label>
+              <label>Senha temporária (mín. 12 caracteres)<input required minLength={12} type="password" value={newStaff.password} onChange={e=>setNewStaff({...newStaff,password:e.target.value})}/></label>
+              <button className="primary-button" type="submit"><Plus size={17}/> Cadastrar</button>
+            </form><p className="security-note">MFA e redefinição de senha são itens pendentes para produção.</p></div></div>
+        </section>}
+        {view==='assistant'&&<section><div className="page-heading"><div><span className="eyebrow">ASSISTÊNCIA À DOCUMENTAÇÃO</span><h1>Assistente clínico</h1><p>Extração estruturada de uma transcrição para revisão humana.</p></div></div>
+          <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Transcrição da consulta</h2><Sparkles size={20}/></div><form onSubmit={askAI} className="stack gap-4">
+            <label>Texto a analisar<textarea rows={13} minLength={10} required value={transcript} onChange={e=>setTranscript(e.target.value)} placeholder="Transcrição fornecida pelo profissional. Não inserir informações identificáveis em ambiente sem autorização de tratamento de dados."/></label>
+            <button className="primary-button" disabled={loading} type="submit"><Sparkles size={17}/> Extrair informações</button></form>
+            <p className="footnote muted">Desabilitado por padrão. Ativar exige configuração contratual do provedor, avaliação de privacidade e permissão na organização.</p>
+          </div><div className="panel"><div className="panel-title"><h2>Sugestão para revisão</h2></div>{aiResult?<pre className="ai-json">{JSON.stringify(aiResult,null,2)}</pre>:<div className="empty-state"><Sparkles size={32}/><p>Nenhuma sugestão ainda.</p></div>}<p className="muted footnote">Nenhuma sugestão é registrada ou assinada automaticamente.</p></div></div>
+        </section>}
+      </main>
+      <footer className="footer"><div><span className="status-dot"/> StarMed MVP • Ambiente não homologado</div><div className="offline-actions"><LockKeyhole size={15}/><input aria-label="Frase-senha offline" type="password" placeholder="Frase-senha offline (mín. 12)" value={passphrase} onChange={e=>setPassphrase(e.target.value)}/><button onClick={()=>void syncNow()} disabled={loading||!pending||passphrase.length<12}><CloudUpload size={15}/> Sincronizar {pending? '('+pending+')':''}</button></div></footer>
+    </div>
+  </div>;
+}

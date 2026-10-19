@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, HeartPulse, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, WifiOff, X } from 'lucide-react';
-import { api, ApiError, type Session, type Patient, type Encounter, type ClinicalNote, type Doctor, type Appointment } from './api';
+import { api, type Session, type Patient, type Encounter, type ClinicalNote, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
 

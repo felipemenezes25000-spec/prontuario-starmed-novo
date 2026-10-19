@@ -6,7 +6,7 @@
     "dev": "node --watch -r ts-node/register src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "test": "tsx --test src/domain.test.ts src/auth-mfa.test.ts src/pki/pki.test.ts",
+    "test": "tsx --test src/domain.test.ts src/auth-mfa.test.ts src/pki/pki.test.ts src/signature.test.ts src/fhir-extra.test.ts src/interop/interop.test.ts src/teleconsult.test.ts src/ai-clinical.test.ts src/portal.test.ts src/hospital.test.ts src/product.test.ts",
     "bootstrap": "tsx src/bootstrap.ts",
     "smoke": "tsx src/smoke.ts",
     "smoke:mfa": "tsx src/smoke-mfa.ts"

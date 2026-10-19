@@ -11,10 +11,23 @@ import { SsoController, OidcService } from './sso';
 import { Db } from './db';
 import { JwtGuard } from './security';
 import { HealthController, AuthController, UsersController, PatientsController, AppointmentsController, EncountersController, FhirController, AiController } from './controllers';
+import { FhirExtraController, SmartWellKnownController } from './fhir-extra';
+import { SignatureController, SignatureVerifyController } from './signature';
+import { InteropController } from './interop/interop.controller';
+import { TeleconsultController } from './teleconsult';
+import { AiClinicalController } from './ai-clinical';
+import { StaffPortalController, PatientPortalController } from './portal';
+import { HospitalController } from './hospital';
+import { ProductController } from './product';
 import { assertSecurityConfig } from './config';
 
 @Module({
-  controllers:[HealthController,AuthController,UsersController,PatientsController,AppointmentsController,EncountersController,ClinicalAddendaController,AllergiesController,ProblemsController,FhirController,AiController,MfaController,SsoController],
+  controllers:[
+    HealthController,AuthController,UsersController,PatientsController,AppointmentsController,EncountersController,
+    ClinicalAddendaController,AllergiesController,ProblemsController,FhirController,AiController,MfaController,SsoController,
+    FhirExtraController,SmartWellKnownController,SignatureController,SignatureVerifyController,InteropController,
+    TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController
+  ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]
 })
 class ApiModule {}
@@ -29,6 +42,8 @@ async function bootstrap(){
   app.use('/auth/mfa/recovery',limiter('Excesso de tentativas de recuperação; tente mais tarde',10));
   app.use('/auth/sso/start',limiter('Excesso de inícios de SSO; tente mais tarde',30));
   app.use('/auth/sso/callback',limiter('Excesso de callbacks SSO; tente mais tarde',30));
+  // Rota pública do Guia ITI (VALIDAR): sem limite por IP do validador, mas com teto defensivo.
+  app.use('/verify',limiter('Excesso de consultas de validação; tente mais tarde',120));
   app.use((req:any,res:any,next:any)=>{res.setHeader('Cache-Control','no-store'); next();});
   app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,OPTIONS',allowedHeaders:'Authorization,Content-Type'});
   await app.listen(Number(process.env.API_PORT || 3001),'127.0.0.1');

@@ -88,6 +88,36 @@ Portas ocupadas por terceiros: 5432 (backend-dotnet), 5173 (processo alheio). Us
      fixas), `tsc --noEmit` limpo, `npm run build` API+Web **verde**.
      Pendente (próximo passo): integração API (endpoints de assinatura/validação +
      migração de `document_signatures`).
+7. **Sete frentes + P0-B API + P0-C concluídos** (fan-out com subagentes + execução
+   direta; 4 subagentes entregaram: FHIR, assinatura PAdES, interop, produto; os demais
+   — teleconsulta, IA, portal, hospitalar, backup — foram implementados diretamente
+   após quedas dos agentes, reconfirmando a lição de instabilidade desta máquina):
+   - **FHIR R4 + SMART**: `fhir-extra.ts` (CapabilityStatement, /.well-known/
+     smart-configuration na raiz, 7 buscas Bundle searchset org-scoped).
+   - **Assinatura PAdES API**: `signature.ts` (sign-pades com cadeia validada,
+     requireTimestamp explícito, evidência tri-estado; rota pública /verify/:id do
+     Guia ITI Cap. IV); migração 006 (`document_signatures` append-only +
+     `signature_verify_codes`).
+   - **Interop**: `interop/` (HL7v2 parser/ACK/MLLP, TISS consulta+lote, NFSe ABRASF,
+     ledger `inbound_messages`); migração 007. XSD ANS pendente (declarado).
+   - **Teleconsulta**: `teleconsult.ts` (salas waiting/open/closed, signaling
+     append-only com seq, convite single-use, consent gate); migração 008.
+   - **IA clínica**: `ai-clinical.ts` (CDS Hooks, dictation/discharge-summary/codes
+     com `ai_suggestions` pending→só médico revisa, MSE de interações); migração 009.
+   - **Portal**: `portal.ts` (convites, activate, JWT portal purpose:'portal',
+     /portal/me/*, crm_outbox nasce desligado); migração 010. Fix de integração:
+     rotas /portal/me/* precisam de @Public() (o guard global rejeita purpose).
+   - **Hospitalar**: `hospital.ts` (wards/beds com EXCLUDE gist, ADT admit/transfer/
+     discharge, 344 com justificativa ≥20 chars, pedidos lab/imaging); migração 011
+     (com UNIQUE(id,org_id) exigido pelas FKs compostas).
+   - **Produto**: `product.ts` (templates versionados, importador CSV tudo-ou-nada,
+     matriz RBAC, org_settings, métricas); migração 012.
+   - **P0-C**: `scripts/backup/` (pg-backup + restore-verify) e **drill real PASSOU**
+     (PG16.15 via container); runbook em docs/BACKUP_RUNBOOK.md.
+   - **Verificação**: `npm test` **103/103 verdes** (todas as 11 suítes), tsc limpo,
+     build API+Web verde, migrações 002–012 aplicadas em PG16 descartável, smoke E2E
+     real em :3102 (capability, SMART, CDS warfarina+AINA, HL7 ack AA, TISS XML,
+     portal invite→activate→login→documents, RBAC, métricas).
 
 ## EM ABERTO (continuar daqui)
 

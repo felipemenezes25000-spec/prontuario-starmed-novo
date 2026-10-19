@@ -5,13 +5,14 @@ import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { ClinicalAddendaController } from './addenda';
+import { AllergiesController, ProblemsController } from './clinical-history';
 import { Db } from './db';
 import { JwtGuard } from './security';
 import { HealthController, AuthController, UsersController, PatientsController, AppointmentsController, EncountersController, FhirController, AiController } from './controllers';
 import { assertSecurityConfig } from './config';
 
 @Module({
-  controllers:[HealthController,AuthController,UsersController,PatientsController,AppointmentsController,EncountersController,ClinicalAddendaController,FhirController,AiController],
+  controllers:[HealthController,AuthController,UsersController,PatientsController,AppointmentsController,EncountersController,ClinicalAddendaController,AllergiesController,ProblemsController,FhirController,AiController],
   providers:[Db,{provide:APP_GUARD,useClass:JwtGuard}]
 })
 class ApiModule {}

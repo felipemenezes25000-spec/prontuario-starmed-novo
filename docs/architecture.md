@@ -47,3 +47,9 @@ Referências oficiais:
 - API de atestação de notas com `expectedVersion` para prevenção de gravações desatualizadas.
 - Rate limit básico de login em memória. **Não é proteção distribuída para produção** (requer Redis/gateway, MFA, políticas de IP e observabilidade).
 - Redação de informações sensíveis na consulta individual do paciente para perfis sem acesso clínico.
+
+## História clínica estruturada (migração 004)
+- `patient_allergies`: substância, reação, gravidade, estado clínico e estado de verificação, autor e data; leitura por médico/enfermagem, criação pelos mesmos papéis.
+- `patient_conditions`: problemas clínicos codificados opcionalmente com um URI de sistema de códigos, verificação e data de início; criação restrita a médico.
+- Endpoints autenticados `GET/POST /patients/:patientId/allergies` e `GET/POST /patients/:patientId/problems`, sempre filtrados por organização.
+- São registros históricos básicos e não substituem reconciliação medicamentosa, checagem de interações, prescrições ou protocolos; é obrigatório revisar a informação antes de condutas clínicas.

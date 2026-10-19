@@ -82,6 +82,7 @@ export default function App(){
   const token=session?.accessToken??null;
   const user=session?.user;
   const isDoctor=user?.role==='doctor';
+  const hasUnsavedChanges=!!note && JSON.stringify(sections)!==JSON.stringify(note.content.sections);
   function alert(text:string,kind:Banner['kind']='info'){setBanner({text,kind});}
   async function loadLists(current:Session){
     try {
@@ -248,7 +249,7 @@ export default function App(){
             {note?.status==='signed'?<div className="signed-message"><ShieldCheck size={19}/> Documento atestado em {note.signed_at?fmt(note.signed_at):'data não informada'}. Edição bloqueada.</div>:isDoctor?<div className="action-row">
               <button className="secondary-button" disabled={loading} onClick={()=>void saveDraft(true)}><WifiOff size={17}/> Salvar criptografado offline</button>
               <button className="secondary-button" disabled={loading} onClick={()=>void saveDraft(false)}><CloudUpload size={17}/> Salvar rascunho</button>
-              <button className="primary-button" disabled={loading||!note} onClick={()=>void signNote()}><ShieldCheck size={17}/> Atestar evolução</button>
+              <button className="primary-button" disabled={loading||!note||hasUnsavedChanges} onClick={()=>void signNote()}><ShieldCheck size={17}/> Atestar evolução</button>
             </div>:<p className="muted">Visualização de equipe assistencial. Apenas o médico responsável pode editar e atestar.</p>}
             <p className="muted footnote">Atestação no banco não substitui assinatura digital legal. Alterações locais precisam ser salvas antes de atestar.</p>
           </>}</div></div></>}

@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Activity, AlertCircle, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, HeartPulse, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, WifiOff, X } from 'lucide-react';
+import { Activity, AlertCircle, ArrowRight, BedDouble, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, HeartPulse, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
 import { api, type Session, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
+import { TeleconsultPage, HospitalPage, TemplatesPage, MetricsPage, LgpdPage } from './pages/Fronts';
 
-type View='dashboard'|'patients'|'record'|'agenda'|'team'|'assistant';
+type View='dashboard'|'patients'|'record'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd';
 type Banner={text:string;kind:'success'|'error'|'info'};
 type Draft={expectedVersion:number;operationId:string;templateId:string;sections:Record<string,string>};
 const mkId=()=>crypto.randomUUID();
@@ -48,6 +49,11 @@ function Nav({view,onView,role}:{view:View;onView:(v:View)=>void;role:string}){
     {key:'record',label:'Prontuário',icon:ClipboardList,allowed:role==='doctor'||role==='nurse'},
     {key:'agenda',label:'Agenda',icon:CalendarDays,allowed:true},
     {key:'assistant',label:'Assistente de IA',icon:Sparkles,allowed:role==='doctor'},
+    {key:'teleconsult',label:'Teleconsulta',icon:Video,allowed:role==='doctor'||role==='nurse'||role==='admin'},
+    {key:'hospital',label:'Hospitalar',icon:BedDouble,allowed:role==='doctor'||role==='nurse'||role==='admin'},
+    {key:'templates',label:'Templates',icon:FileSignature,allowed:role==='doctor'||role==='admin'},
+    {key:'metrics',label:'Métricas',icon:Activity,allowed:role==='doctor'||role==='admin'},
+    {key:'lgpd',label:'LGPD',icon:ShieldCheck,allowed:true},
     {key:'team',label:'Equipe',icon:Stethoscope,allowed:role==='admin'}
   ];
   return <nav className="sidebar-menu">{items.filter(x=>x.allowed).map(x=>{
@@ -277,7 +283,7 @@ export default function App(){
     </aside>
     <div className="workspace">
       <header className="topbar">
-        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{view==='dashboard'?'Visão geral':view==='record'?'Prontuário':view==='patients'?'Pacientes':view==='agenda'?'Agenda':view==='team'?'Equipe':'Assistente de IA'}</strong></div>
+        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD'} as const)[view]}</strong></div>
         <div className="topbar-right"><span className={'status-dot '+(serverReady?'':'offline')}/>{serverReady?'API disponível':'API indisponível'} <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="content">
@@ -398,6 +404,11 @@ export default function App(){
             <p className="footnote muted">Desabilitado por padrão. Ativar exige configuração contratual do provedor, avaliação de privacidade e permissão na organização.</p>
           </div><div className="panel"><div className="panel-title"><h2>Sugestão para revisão</h2></div>{aiResult?<pre className="ai-json">{JSON.stringify(aiResult,null,2)}</pre>:<div className="empty-state"><Sparkles size={32}/><p>Nenhuma sugestão ainda.</p></div>}<p className="muted footnote">Nenhuma sugestão é registrada ou assinada automaticamente.</p></div></div>
         </section>}
+        {view==='teleconsult'&&<TeleconsultPage session={session!} alert={alert}/>}
+        {view==='hospital'&&<HospitalPage session={session!} alert={alert}/>}
+        {view==='templates'&&<TemplatesPage session={session!} alert={alert}/>}
+        {view==='metrics'&&<MetricsPage session={session!} alert={alert}/>}
+        {view==='lgpd'&&<LgpdPage session={session!} patients={patients} alert={alert}/>}
       </main>
       <footer className="footer"><div><span className="status-dot"/> StarMed MVP • Ambiente não homologado</div><div className="offline-actions"><LockKeyhole size={15}/><input aria-label="Frase-senha offline" type="password" placeholder="Frase-senha offline (mín. 12)" value={passphrase} onChange={e=>setPassphrase(e.target.value)}/><button onClick={()=>void syncNow()} disabled={loading||!pending||passphrase.length<12}><CloudUpload size={15}/> Sincronizar {pending? '('+pending+')':''}</button></div></footer>
     </div>

@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Put, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException, HttpException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
 import { Db } from './db';
 import { Actor, audit, hashPassword, issueToken, requireRole, verifyPassword } from './security';
-import { aiSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, uuid } from './domain';
+import { aiSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, signSchema, uuid } from './domain';
 
 type R = {actor:Actor};
 const a=(r:R)=>r.actor;
@@ -70,7 +70,10 @@ export class PatientsController {
   @Get(':id')
   async get(@Req() req:R,@Param('id') rawId:string){
     const id=parse(uuid,rawId),actor=a(req);requireRole(actor,['admin','doctor','nurse','reception']);
-    const r=await this.db.query('SELECT * FROM patients WHERE id=$1 AND org_id=$2',[id,actor.org_id]);
+    const columns = actor.role==='doctor'||actor.role==='nurse'
+      ? 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,insurance_id,social_determinants,created_at,updated_at'
+      : 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,created_at,updated_at';
+    const r=await this.db.query('SELECT '+columns+' FROM patients WHERE id=$1 AND org_id=$2',[id,actor.org_id]);
     if(!r.rowCount)throw new NotFoundException();
     await audit(this.db,actor,'patient.read','patient',id);
     return r.rows[0];
@@ -90,7 +93,16 @@ export class AppointmentsController {
   async create(@Req() req:R,@Body() raw:unknown){
     const actor=a(req);requireRole(actor,['admin','doctor','reception']);
     const b=parse(appointmentSchema,raw);
-    const r=await this.db.query<any>('INSERT INTO appointments(org_id,patient_id,practitioner_id,scheduled_at,duration_minutes,kind) SELECT $1,p.id,u.id,$4,$5,$6 FROM patients p JOIN users u ON u.id=$3 AND u.org_id=$1 AND u.role=\'doctor\' AND u.active=true WHERE p.id=$2 AND p.org_id=$1 RETURNING *',[actor.org_id,b.patientId,b.practitionerId,b.scheduledAt,b.durationMinutes,b.kind]);
+    const start=new Date(b.scheduledAt);
+    const end=new Date(start.getTime()+b.durationMinutes*60000).toISOString();
+    let r;
+    try {
+      r=await this.db.query<any>("INSERT INTO appointments(org_id,patient_id,practitioner_id,scheduled_at,scheduled_end_at,duration_minutes,kind) SELECT $1,p.id,u.id,$4,$5,$6,$7 FROM patients p JOIN users u ON u.id=$3 AND u.org_id=$1 AND u.role='doctor' AND u.active=true WHERE p.id=$2 AND p.org_id=$1 RETURNING *",
+        [actor.org_id,b.patientId,b.practitionerId,b.scheduledAt,end,b.durationMinutes,b.kind]);
+    } catch(error) {
+      if((error as {code?:string}).code==='23P01')throw new ConflictException('Horário indisponível para este profissional');
+      throw error;
+    }
     if(!r.rowCount)throw new NotFoundException('Paciente/médico não encontrado');
     await audit(this.db,actor,'appointment.created','appointment',r.rows[0].id);
     return r.rows[0];
@@ -168,9 +180,9 @@ export class EncountersController {
     });
   }
   @Post(':id/notes/sign')
-  async sign(@Req() req:R,@Param('id') rawId:string) {
+  async sign(@Req() req:R,@Param('id') rawId:string,@Body() raw:unknown) {
     const actor=a(req);requireRole(actor,['doctor']);
-    const id=parse(uuid,rawId);
+    const id=parse(uuid,rawId),body=parse(signSchema,raw);
     return this.db.tx(async c=>{
       const e=await c.query<any>('SELECT * FROM encounters WHERE id=$1 AND org_id=$2 FOR UPDATE',[id,actor.org_id]);
       if(!e.rowCount)throw new NotFoundException();
@@ -179,6 +191,7 @@ export class EncountersController {
       const r=await c.query<any>('SELECT * FROM clinical_notes WHERE encounter_id=$1 AND org_id=$2 FOR UPDATE',[id,actor.org_id]);
       if(!r.rowCount)throw new NotFoundException('Rascunho não encontrado');
       if(r.rows[0].status!=='draft')throw new ConflictException('Nota já assinada');
+      if(r.rows[0].version!==body.expectedVersion)throw new ConflictException('Versão desatualizada: recarregue a evolução');
       if(!validateNoteForSignature(r.rows[0].content))throw new ConflictException('Preencha avaliação e plano antes de assinar');
       const signed=await c.query<any>('UPDATE clinical_notes SET status=\'signed\',signed_by=$3,signed_at=now(),updated_at=now(),version=version+1 WHERE encounter_id=$1 AND org_id=$2 RETURNING *',[id,actor.org_id,actor.id]);
       await auditQuery(c,actor,'note.signed','encounter',id);

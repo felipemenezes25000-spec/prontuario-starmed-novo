@@ -62,3 +62,12 @@ export function validateNoteForSignature(content: unknown): boolean {
   const s = note.data.sections;
   return Boolean(s.assessment?.trim() && s.plan?.trim());
 }
+
+export const signSchema = z.object({
+  expectedVersion: z.number().int().min(1)
+}).strict();
+
+export const addendumSchema = z.object({
+  reason: z.string().trim().min(8).max(1000),
+  content: z.string().trim().min(10).max(10000)
+}).strict();

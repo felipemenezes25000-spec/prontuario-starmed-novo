@@ -11,6 +11,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
       - ./database/002_unique_login.sql:/docker-entrypoint-initdb.d/002_unique_login.sql:ro
+      - ./database/003_clinical_extensions.sql:/docker-entrypoint-initdb.d/003_clinical_extensions.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U starmed -d starmed"]
       interval: 5s

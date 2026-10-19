@@ -4,7 +4,7 @@ Pré-requisitos: Node.js 22+, npm, Docker Desktop/Engine e Docker Compose.
 
 1. `cp .env.example .env` (no PowerShell: `Copy-Item .env.example .env`).
 2. Altere AUTH_SECRET com valor aleatório (ex.: `node -e "console.log(require('node:crypto').randomBytes(48).toString('base64url'))"`).
-3. Defina POSTGRES_PASSWORD=change_me para ambiente descartável local, e mantenha DATABASE_URL coerente.
+3. Defina POSTGRES_PASSWORD com senha forte e mantenha DATABASE_URL coerente. O valor de exemplo é apenas para ambiente descartável local.
 4. Preencha BOOTSTRAP_ADMIN_EMAIL e BOOTSTRAP_ADMIN_PASSWORD (senha única >= 12 caracteres).
 5. `docker compose up -d` (schema é aplicado apenas na **primeira criação** do volume).
 6. `npm install`.

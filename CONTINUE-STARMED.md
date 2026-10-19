@@ -158,7 +158,22 @@ frentes em `apps/web` (o objetivo desta sessão foi `apps/api`); testes cross-te
 12. **RLS opt-in fechado** — `database/014_rls_optin.sql` (ENABLE sem FORCE + policies
     org_id em 30 tabelas; comportamento do owner não afetado) + **drill E2E real**
     `scripts/rls/cross-tenant-drill.mjs`: org A→404 no recurso da org B; org B→200 no
-    próprio e 404 no da org A. PASSOU.
+    próprio e 404 no da org A. PASSOU. Commit `5eb8348`.
+13. **Submissão ITI preparada** — `scripts/icp-brasil/prepare-iti-submission.mjs` monta
+    o pacote (doc + CMS + manifest.sha256 + INSTRUÇÕES.md). A submissão ao portal
+    `validar.iti.gov.br` é passo humano (exige navegador/sessão) — declarada como
+    pendência externa. Commit `7057415`.
+14. **Frontend das frentes fechado** — `apps/web/src/pages/Fronts.tsx` com 5 páginas no
+    design system existente (teleconsulta: salas/convite/consentimento; hospitalar:
+    métricas de leitos, alas, pedidos lab/imagem; templates: rascunho→publicar;
+    métricas/admin: summary, RBAC, ajustes; LGPD: pedidos art. 18 + consentimento),
+    plugadas no App.tsx (View/Nav/breadcrumb com permissões por papel). Build web
+    verde. Commit `7912eaa`.
+
+**Pendências externas declaradas (não implementáveis sem credencial/sessão real)**:
+provedor OIDC real (config via OIDC_* no .env.example), credencial ACT SERPRO
+(TSA_* env; capacidade nasce desligada) e a submissão humana ao validar.iti.gov.br
+(pacote pronto pelo script acima).
 
 ## EM ABERTO (continuar daqui)
 

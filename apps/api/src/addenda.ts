@@ -36,6 +36,13 @@ export class ClinicalAddendaController {
         [encounterId,actor.org_id]);
       if(!e.rowCount)throw new NotFoundException('Atendimento não encontrado');
       if(e.rows[0].doctor_id!==actor.id)throw new ForbiddenException('Somente médico responsável pode criar adendo');
+      const replay=await client.query<{operation:string;response:any}>(
+        'SELECT operation,response FROM idempotency_keys WHERE org_id=$1 AND key=$2',
+        [actor.org_id,body.operationId]);
+      if(replay.rowCount){
+        if(replay.rows[0].operation!=='note.addendum:'+encounterId)throw new ConflictException('Chave de idempotência reutilizada');
+        return replay.rows[0].response;
+      }
       const n=await client.query<{id:string;status:string}>(
         'SELECT id,status FROM clinical_notes WHERE encounter_id=$1 AND org_id=$2 FOR UPDATE',
         [encounterId,actor.org_id]);
@@ -46,6 +53,9 @@ export class ClinicalAddendaController {
       await client.query(
         'INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',
         [actor.org_id,actor.id,'note.addendum.signed','encounter',encounterId]);
+      await client.query(
+        'INSERT INTO idempotency_keys(org_id,key,operation,response) VALUES($1,$2,$3,$4)',
+        [actor.org_id,body.operationId,'note.addendum:'+encounterId,JSON.stringify(inserted.rows[0])]);
       return inserted.rows[0];
     });
   }

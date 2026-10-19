@@ -95,17 +95,18 @@ export class AppointmentsController {
     const b=parse(appointmentSchema,raw);
     const start=new Date(b.scheduledAt);
     const end=new Date(start.getTime()+b.durationMinutes*60000).toISOString();
-    let r;
     try {
-      r=await this.db.query<any>("INSERT INTO appointments(org_id,patient_id,practitioner_id,scheduled_at,scheduled_end_at,duration_minutes,kind) SELECT $1,p.id,u.id,$4,$5,$6,$7 FROM patients p JOIN users u ON u.id=$3 AND u.org_id=$1 AND u.role='doctor' AND u.active=true WHERE p.id=$2 AND p.org_id=$1 RETURNING *",
-        [actor.org_id,b.patientId,b.practitionerId,b.scheduledAt,end,b.durationMinutes,b.kind]);
-    } catch(error) {
+      return await this.db.tx(async client=>{
+        const r=await client.query<any>("INSERT INTO appointments(org_id,patient_id,practitioner_id,scheduled_at,scheduled_end_at,duration_minutes,kind) SELECT $1,p.id,u.id,$4,$5,$6,$7 FROM patients p JOIN users u ON u.id=$3 AND u.org_id=$1 AND u.role='doctor' AND u.active=true WHERE p.id=$2 AND p.org_id=$1 RETURNING *",
+          [actor.org_id,b.patientId,b.practitionerId,b.scheduledAt,end,b.durationMinutes,b.kind]);
+        if(!r.rowCount)throw new NotFoundException('Paciente/médico não encontrado');
+        await auditQuery(client,actor,'appointment.created','appointment',r.rows[0].id);
+        return r.rows[0];
+      });
+    }catch(error) {
       if((error as {code?:string}).code==='23P01')throw new ConflictException('Horário indisponível para este profissional');
       throw error;
     }
-    if(!r.rowCount)throw new NotFoundException('Paciente/médico não encontrado');
-    await audit(this.db,actor,'appointment.created','appointment',r.rows[0].id);
-    return r.rows[0];
   }
 }
 @Controller('encounters')
@@ -153,15 +154,16 @@ export class EncountersController {
     const actor=a(req);requireRole(actor,['doctor']);
     const id=parse(uuid,rawId),b=parse(draftSchema,raw);
     return this.db.tx(async c=>{
+      const e=await c.query<any>('SELECT * FROM encounters WHERE id=$1 AND org_id=$2 FOR UPDATE',[id,actor.org_id]);
+      if(!e.rowCount)throw new NotFoundException();
+      if(e.rows[0].doctor_id!==actor.id)throw new ForbiddenException('Apenas médico responsável');
+      if(e.rows[0].status==='cancelled')throw new ConflictException('Atendimento cancelado');
+      // Authorization MUST run before returning a cached idempotency response.
       const replay=await c.query<any>('SELECT response,operation FROM idempotency_keys WHERE org_id=$1 AND key=$2',[actor.org_id,b.operationId]);
       if(replay.rowCount) {
         if(replay.rows[0].operation!=='note.draft:'+id)throw new ConflictException('Idempotency key reused');
         return replay.rows[0].response;
       }
-      const e=await c.query<any>('SELECT * FROM encounters WHERE id=$1 AND org_id=$2 FOR UPDATE',[id,actor.org_id]);
-      if(!e.rowCount)throw new NotFoundException();
-      if(e.rows[0].doctor_id!==actor.id)throw new ForbiddenException('Apenas médico responsável');
-      if(e.rows[0].status==='cancelled')throw new ConflictException('Atendimento cancelado');
       const old=await c.query<any>('SELECT * FROM clinical_notes WHERE encounter_id=$1 AND org_id=$2 FOR UPDATE',[id,actor.org_id]);
       const prior=old.rows[0]??null;
       if(prior?.status==='signed')throw new ConflictException('Nota assinada é imutável');

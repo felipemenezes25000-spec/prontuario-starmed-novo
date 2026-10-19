@@ -68,6 +68,7 @@ export const signSchema = z.object({
 }).strict();
 
 export const addendumSchema = z.object({
+  operationId: uuid,
   reason: z.string().trim().min(8).max(1000),
   content: z.string().trim().min(10).max(10000)
 }).strict();

@@ -208,7 +208,7 @@ export default function App(){
     if(!window.confirm('Confirma o adendo? Ele será atestado e não poderá ser alterado.'))return;
     setLoading(true);
     try {
-      await api<ClinicalAddendum>('/encounters/'+encounter.id+'/addenda',token,'POST',{reason:addendumReason,content:addendumContent});
+      await api<ClinicalAddendum>('/encounters/'+encounter.id+'/addenda',token,'POST',{operationId:mkId(),reason:addendumReason,content:addendumContent});
       setAddenda(await api<ClinicalAddendum[]>('/encounters/'+encounter.id+'/addenda',token));
       setAddendumReason('');setAddendumContent('');
       alert('Adendo atestado e registrado sem modificar a evolução original.','success');

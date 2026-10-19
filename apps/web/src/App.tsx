@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowRight, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, HeartPulse, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, WifiOff, X } from 'lucide-react';
-import { api, type Session, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type Doctor, type Appointment } from './api';
+import { api, type Session, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
 
@@ -65,6 +65,10 @@ export default function App(){
   const [patientQuery,setPatientQuery]=useState('');
   const [patient,setPatient]=useState<Patient|null>(null);
   const [encounters,setEncounters]=useState<Encounter[]>([]);
+  const [allergies,setAllergies]=useState<PatientAllergy[]>([]);
+  const [problems,setProblems]=useState<PatientProblem[]>([]);
+  const [allergyForm,setAllergyForm]=useState({substance:'',reaction:'',criticality:'unable-to-assess',verificationStatus:'unconfirmed'});
+  const [problemForm,setProblemForm]=useState({display:'',codeSystem:'',code:'',verificationStatus:'provisional'});
   const [encounter,setEncounter]=useState<Encounter|null>(null);
   const [note,setNote]=useState<ClinicalNote|null>(null);
   const [addenda,setAddenda]=useState<ClinicalAddendum[]>([]);
@@ -104,8 +108,14 @@ export default function App(){
   async function openPatient(p:Patient){
     if(!token)return;
     setPatient(p);setEncounter(null);setNote(null);setAddenda([]);setSections({});setView('record');
-    try {setEncounters(await api<Encounter[]>('/encounters?patientId='+encodeURIComponent(p.id),token));}
-    catch(e){alert((e as Error).message,'error');}
+    try {
+      const [visits,allergyRecords,problemRecords]=await Promise.all([
+        api<Encounter[]>('/encounters?patientId='+encodeURIComponent(p.id),token),
+        api<PatientAllergy[]>('/patients/'+p.id+'/allergies',token),
+        api<PatientProblem[]>('/patients/'+p.id+'/problems',token)
+      ]);
+      setEncounters(visits);setAllergies(allergyRecords);setProblems(problemRecords);
+    }catch(e){alert((e as Error).message,'error');}
   }
   async function openEncounter(e:Encounter){
     if(!token)return;
@@ -128,6 +138,30 @@ export default function App(){
       setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown'});
       alert('Paciente cadastrado.','success');
       if(isDoctor)await openPatient(created);
+    }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
+  }
+  async function createAllergy(e:FormEvent){
+    e.preventDefault();
+    if(!patient||!token)return;
+    setLoading(true);
+    try {
+      await api('/patients/'+patient.id+'/allergies',token,'POST',allergyForm);
+      setAllergies(await api<PatientAllergy[]>('/patients/'+patient.id+'/allergies',token));
+      setAllergyForm({substance:'',reaction:'',criticality:'unable-to-assess',verificationStatus:'unconfirmed'});
+      alert('Alergia documentada. Verifique o estado de confirmação.','success');
+    }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
+  }
+  async function createProblem(e:FormEvent){
+    e.preventDefault();
+    if(!patient||!token||!isDoctor)return;
+    setLoading(true);
+    try {
+      const payload={display:problemForm.display,verificationStatus:problemForm.verificationStatus,
+        ...(problemForm.code&&problemForm.codeSystem?{code:problemForm.code,codeSystem:problemForm.codeSystem}:{})};
+      await api('/patients/'+patient.id+'/problems',token,'POST',payload);
+      setProblems(await api<PatientProblem[]>('/patients/'+patient.id+'/problems',token));
+      setProblemForm({display:'',codeSystem:'',code:'',verificationStatus:'provisional'});
+      alert('Problema clínico documentado.','success');
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
   }
   async function createEncounter(e:FormEvent){
@@ -257,6 +291,38 @@ export default function App(){
           <><div className="patient-header"><div className="patient-avatar large">{patient.fullName.slice(0,1).toUpperCase()}</div><div><span className="eyebrow">PACIENTE EM ATENDIMENTO</span><h2>{patient.fullName}</h2><p>Nascimento: {String(patient.birthDate).slice(0,10)}</p></div><span className="small-pill">ID {patient.id.slice(0,8)}</span></div>
           <div className="record-grid"><div className="stack gap-5"><div className="panel"><div className="panel-title"><h2>Atendimentos</h2><span className="small-pill">{encounters.length}</span></div>
             {encounters.length===0?<p className="muted">Nenhum atendimento para este paciente.</p>:encounters.map(e=><button className={'encounter-row '+(encounter?.id===e.id?'selected':'')} onClick={()=>void openEncounter(e)} key={e.id}><div className="list-icon"><FilePenLine size={18}/></div><div><strong>{specialties[e.specialty as Specialty]?.name||e.specialty}</strong><small>{fmt(e.started_at)}</small></div><ArrowRight size={16}/></button>)}
+          </div>
+          <div className="panel">
+            <div className="panel-title"><h2>Resumo clínico</h2><ShieldCheck size={19}/></div>
+            <div className="clinical-summary">
+              <h3>Alergias registradas</h3>
+              {allergies.length===0?<p className="muted">Não há registros. Isso não confirma ausência de alergias.</p>:
+                allergies.map(x=><div className="clinical-chip" key={x.id}><strong>{x.substance}</strong>
+                  {x.criticality==='high'&&<span className="clinical-high">Alta criticidade</span>}
+                  <small>{x.reaction||'Reação não informada'} • {x.verification_status==='confirmed'?'Confirmada':'Não confirmada'}</small>
+                </div>)}
+              <details className="clinical-details"><summary>+ Registrar alergia</summary>
+                <form className="stack gap-3" onSubmit={createAllergy}>
+                  <label>Substância<input required minLength={2} maxLength={200} value={allergyForm.substance} onChange={e=>setAllergyForm({...allergyForm,substance:e.target.value})} placeholder="Ex.: medicamento, alimento"/></label>
+                  <label>Reação observada ou relatada<input maxLength={1000} value={allergyForm.reaction} onChange={e=>setAllergyForm({...allergyForm,reaction:e.target.value})}/></label>
+                  <label>Criticidade<select value={allergyForm.criticality} onChange={e=>setAllergyForm({...allergyForm,criticality:e.target.value})}><option value="unable-to-assess">Não avaliada</option><option value="low">Baixa</option><option value="high">Alta</option></select></label>
+                  <label>Confirmação<select value={allergyForm.verificationStatus} onChange={e=>setAllergyForm({...allergyForm,verificationStatus:e.target.value})}><option value="unconfirmed">Não confirmada</option><option value="confirmed">Confirmada</option></select></label>
+                  <button className="secondary-button" disabled={loading} type="submit"><Plus size={15}/> Registrar</button>
+                </form>
+              </details>
+              <h3>Problemas de saúde</h3>
+              {problems.length===0?<p className="muted">Nenhum problema cadastrado; consulte anamnese e registros anteriores.</p>:
+                problems.map(x=><div className="clinical-chip" key={x.id}><strong>{x.display}</strong><small>{x.code?x.code+' • ':''}{x.verification_status==='confirmed'?'Confirmado':'Provisório'}</small></div>)}
+              {isDoctor&&<details className="clinical-details"><summary>+ Registrar problema</summary>
+                <form className="stack gap-3" onSubmit={createProblem}>
+                  <label>Descrição clínica<input required minLength={3} maxLength={300} value={problemForm.display} onChange={e=>setProblemForm({...problemForm,display:e.target.value})}/></label>
+                  <label>Código (opcional)<input value={problemForm.code} onChange={e=>setProblemForm({...problemForm,code:e.target.value})} placeholder="CID-10/CID-11/SNOMED"/></label>
+                  <label>URI do sistema (quando codificado)<input value={problemForm.codeSystem} onChange={e=>setProblemForm({...problemForm,codeSystem:e.target.value})} placeholder="https://..."/></label>
+                  <label>Confirmação<select value={problemForm.verificationStatus} onChange={e=>setProblemForm({...problemForm,verificationStatus:e.target.value})}><option value="provisional">Hipótese provisória</option><option value="confirmed">Confirmado</option></select></label>
+                  <button className="secondary-button" disabled={loading} type="submit"><Plus size={15}/> Registrar</button>
+                </form>
+              </details>}
+            </div>
           </div>
           {isDoctor&&<div className="panel"><div className="panel-title"><h2>Iniciar atendimento</h2><Plus size={19}/></div><form className="stack gap-3" onSubmit={createEncounter}>
             <label>Especialidade<select value={specialty} onChange={e=>setSpecialty(e.target.value as Specialty)}>{Object.entries(specialties).map(([key,v])=><option key={key} value={key}>{v.name}</option>)}</select></label>

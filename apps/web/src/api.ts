@@ -27,3 +27,12 @@ export type ClinicalAddendum={
   id:string;note_id:string;author_id:string;author_name?:string;
   reason:string;content:string;signed_at:string;
 };
+
+export type PatientAllergy={
+ id:string;substance:string;reaction:string|null;criticality:'low'|'high'|'unable-to-assess';
+ clinical_status:string;verification_status:string;recorded_at:string;
+};
+export type PatientProblem={
+ id:string;display:string;code_system:string|null;code:string|null;
+ clinical_status:string;verification_status:string;onset_date:string|null;recorded_at:string;
+};

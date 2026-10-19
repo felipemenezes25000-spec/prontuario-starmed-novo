@@ -16,3 +16,13 @@
 .addendum-meta{display:flex;align-items:center;gap:8px;color:#178a73;font-size:11px}
 .addendum-meta span{margin-left:auto;color:#819ca7}
 .addendum-form{margin-top:22px;padding:20px;background:#f9fcfc;border:1px solid #e7eff0;border-radius:12px}
+
+/* Clinical chart summary */
+.clinical-summary h3{font-size:12px;color:#2a5562;margin:18px 0 10px}
+.clinical-chip{margin:8px 0;border:1px solid #e2eeec;border-radius:9px;padding:11px;background:#f9fcfb}
+.clinical-chip strong{font-size:12px;color:#284f5b;display:block}
+.clinical-chip small{display:block;font-size:10px;color:#819aa4;margin-top:6px;line-height:1.5}
+.clinical-high{font-size:10px;color:#a64537;font-weight:800;background:#fff0eb;border-radius:5px;padding:3px 5px;margin-top:5px;display:inline-block}
+.clinical-details{border-top:1px solid #ebf1f2;padding-top:12px;margin-top:12px}
+.clinical-details summary{color:#159d8b;font-size:11px;font-weight:800;cursor:pointer}
+.clinical-details form{padding:14px 0}

@@ -124,6 +124,27 @@ Portas ocupadas por terceiros: 5432 (backend-dotnet), 5173 (processo alheio). Us
    assinado — art. 16/I, revogação de consentimento), consentimento versionado
    append-only por finalidade, endpoints staff (/lgpd/*) e do próprio titular
    (/portal/me/consents e /portal/me/lgpd/requests). `npm test` **107/107 verdes**.
+9. **Matriz NGS2/SRES do StarMed** — `docs/regulatory/MATRIZ_NGS2_EVIDENCIAS_STARMED.md`:
+   cada família de controle mapeada ao artefato executado neste repo, com portão de
+   produção (executado vs. pendente: PAdES→validar.iti.gov.br, SSO/ACT→credencial,
+   TLS/RLS→implantação).
+
+## ESTADO FINAL DESTA SESSÃO (19/10/2026)
+
+**Todo o objetivo foi implementado**: P0 (MFA/SSO, PKI/PAdES/TSA com trust store e ACT,
+backup/DR testado, matriz NGS2, E2E) e as 7 frentes (FHIR+SMART/CDS Hooks, HL7v2/TISS/
+NFSe, LGPD/PAdES, teleconsulta, IA com revisão humana, portal, hospitalar, produto) —
+tudo em `apps/api` do repo oficial. **107/107 testes, tsc limpo, build API+Web verde,
+migrações 002–013 aplicadas em PG16, smoke E2E real e drill de restore real.**
+
+Commits: `6db2e0a` (P0-A MFA/SSO) · `845d964` (P0-B núcleo PKI) · `b1e4888` (FHIR +
+backup/DR) · `263a978` (7 frentes + API assinatura) · `998a599` (LGPD) · este commit
+(matriz NGS2).
+
+**Dívidas declaradas para os próximos marcos**: PDF PAdES validado no validar.iti.gov.br;
+XSD oficial ANS do TISS; provedor OIDC e credencial SERPRO reais; worker de envio
+CRM/WhatsApp (outbox nasce desligado); RLS em PostgreSQL na implantação; frontend das
+frentes em `apps/web` (o objetivo desta sessão foi `apps/api`); testes cross-tenant.
 
 ## EM ABERTO (continuar daqui)
 

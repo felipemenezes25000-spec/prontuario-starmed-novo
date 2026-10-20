@@ -56,12 +56,14 @@ async function main() {
     created.orgId = org.id;
     const orgBEmail = `doctor-org-b-${suffix}@example.invalid`;
     const orgBPassword = 'OrgB-drill-' + randomUUID();
-    await db.query(
-      'INSERT INTO users(org_id,email,display_name,role,password_hash) VALUES($1,$2,$3,$4,$5)',
-      [org.id, orgBEmail, 'Doctor Org B', 'doctor', scryptHash(orgBPassword)]);
+    const doctorB = (await db.query(
+      'INSERT INTO users(org_id,email,display_name,role,password_hash) VALUES($1,$2,$3,$4,$5) RETURNING id',
+      [org.id, orgBEmail, 'Doctor Org B', 'doctor', scryptHash(orgBPassword)])).rows[0];
+    // created_by = vínculo de cuidado (P0-05): sem ele o próprio doctor da org B
+    // precisaria de break-glass para ler o prontuário completo.
     const patientB = (await db.query(
-      'INSERT INTO patients(org_id,full_name,birth_date) VALUES($1,$2,$3) RETURNING id',
-      [org.id, `Paciente Org B ${suffix}`, '1990-01-01'])).rows[0];
+      'INSERT INTO patients(org_id,full_name,birth_date,created_by) VALUES($1,$2,$3,$4) RETURNING id',
+      [org.id, `Paciente Org B ${suffix}`, '1990-01-01', doctorB.id])).rows[0];
     log(`Org B criada (${org.id}) com paciente ${patientB.id}`);
 
     // 2. Paciente na org A (via API, com o admin informado) + doctor da org A para as buscas.

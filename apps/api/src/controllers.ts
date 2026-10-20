@@ -1,10 +1,12 @@
 import { Controller, Get, Post, Put, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
 import { Db } from './db';
 import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } from './fhir-mappers';
-import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireRole, requestContext, sessionResponse, verifyPassword } from './security';
+import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireCareContext, requireRole, requestContext, sessionResponse, verifyPassword } from './security';
 import { aiSchema, aiSuggestionSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, signSchema, uuid } from './domain';
 
 type R = {actor:Actor};
+type RWithHeaders = R & { headers?: Record<string, unknown> };
+const breakGlassOf = (req: RWithHeaders) => req.headers?.['x-break-glass-reason'];
 const a=(r:R)=>r.actor;
 const auditQuery = (c:any, actor:Actor, action:string, type:string, id:string|null) => {
   const requestId=requestContext.getStore()?.requestId;
@@ -75,18 +77,23 @@ export class PatientsController {
   async create(@Req() req:R,@Body() raw:unknown){
     const actor=a(req);requireRole(actor,['admin','doctor','reception']);
     const b=parse(patientSchema,raw);
-    const result=await this.db.query<any>('INSERT INTO patients(org_id,full_name,birth_date,administrative_gender,external_id,phone,social_determinants) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,full_name AS "fullName",birth_date AS "birthDate"',[actor.org_id,b.fullName,b.birthDate,b.administrativeGender||null,b.externalId||null,b.phone||null,JSON.stringify(b.socialDeterminants||{})]);
+    const result=await this.db.query<any>('INSERT INTO patients(org_id,full_name,birth_date,administrative_gender,external_id,phone,social_determinants,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,full_name AS "fullName",birth_date AS "birthDate"',[actor.org_id,b.fullName,b.birthDate,b.administrativeGender||null,b.externalId||null,b.phone||null,JSON.stringify(b.socialDeterminants||{}),actor.id]);
     await audit(this.db,actor,'patient.created','patient',result.rows[0].id);
     return result.rows[0];
   }
   @Get(':id')
-  async get(@Req() req:R,@Param('id') rawId:string){
+  async get(@Req() req:RWithHeaders,@Param('id') rawId:string){
     const id=parse(uuid,rawId),actor=a(req);requireRole(actor,['admin','doctor','nurse','reception']);
     const columns = actor.role==='doctor'||actor.role==='nurse'
       ? 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,insurance_id,social_determinants,created_at,updated_at'
       : 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,created_at,updated_at';
     const r=await this.db.query('SELECT '+columns+' FROM patients WHERE id=$1 AND org_id=$2',[id,actor.org_id]);
     if(!r.rowCount)throw new NotFoundException();
+    // Prontuário COMPLETO (papéis clínicos) exige contexto de cuidado ou
+    // break-glass auditado (P0-05 / J1 #13). Admin/recepção recebem apenas
+    // dados demográficos e não passam por esta porta.
+    if(actor.role==='doctor'||actor.role==='nurse')
+      await requireCareContext(this.db,actor,id,breakGlassOf(req));
     await audit(this.db,actor,'patient.read','patient',id);
     return r.rows[0];
   }
@@ -125,10 +132,13 @@ export class AppointmentsController {
 export class EncountersController {
   constructor(private db:Db){}
   @Get()
-  async list(@Req() req:R,@Query('patientId') patientId?:string) {
+  async list(@Req() req:RWithHeaders,@Query('patientId') patientId?:string) {
     const actor=a(req);requireRole(actor,['doctor','nurse']);
     if(!patientId) return [];
     const id=parse(uuid,patientId);
+    const patient=await this.db.query('SELECT 1 FROM patients WHERE org_id=$1 AND id=$2',[actor.org_id,id]);
+    if(!patient.rowCount)throw new NotFoundException();
+    await requireCareContext(this.db,actor,id,breakGlassOf(req));
     const r=await this.db.query('SELECT * FROM encounters WHERE org_id=$1 AND patient_id=$2 ORDER BY started_at DESC LIMIT 100',[actor.org_id,id]);
     await audit(this.db,actor,'encounter.list','patient',id);
     return r.rows;
@@ -143,20 +153,22 @@ export class EncountersController {
     return result.rows[0];
   }
   @Get(':id')
-  async get(@Req() req:R,@Param('id') rawId:string) {
+  async get(@Req() req:RWithHeaders,@Param('id') rawId:string) {
     const actor=a(req);requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
     const r=await this.db.query('SELECT * FROM encounters WHERE id=$1 AND org_id=$2',[id,actor.org_id]);
     if(!r.rowCount)throw new NotFoundException();
+    await requireCareContext(this.db,actor,r.rows[0].patient_id,breakGlassOf(req));
     await audit(this.db,actor,'encounter.read','encounter',id);
     return r.rows[0];
   }
   @Get(':id/notes')
-  async note(@Req() req:R,@Param('id') rawId:string) {
+  async note(@Req() req:RWithHeaders,@Param('id') rawId:string) {
     const actor=a(req);requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
-    const exists=await this.db.query('SELECT 1 FROM encounters WHERE id=$1 AND org_id=$2',[id,actor.org_id]);
+    const exists=await this.db.query('SELECT patient_id FROM encounters WHERE id=$1 AND org_id=$2',[id,actor.org_id]);
     if(!exists.rowCount)throw new NotFoundException();
+    await requireCareContext(this.db,actor,exists.rows[0].patient_id,breakGlassOf(req));
     const r=await this.db.query('SELECT * FROM clinical_notes WHERE encounter_id=$1 AND org_id=$2',[id,actor.org_id]);
     await audit(this.db,actor,'note.read','encounter',id);
     return r.rows[0]??null;
@@ -217,40 +229,44 @@ export class EncountersController {
 export class FhirController {
   constructor(private db:Db){}
   @Get('Patient/:id')
-  async patient(@Req() req:R,@Param('id') rawId:string) {
+  async patient(@Req() req:RWithHeaders,@Param('id') rawId:string) {
     const actor=a(req);requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
     const r=await this.db.query<any>('SELECT * FROM patients WHERE org_id=$1 AND id=$2',[actor.org_id,id]);
     if(!r.rowCount)throw new NotFoundException();
+    await requireCareContext(this.db,actor,id,breakGlassOf(req));
     await audit(this.db,actor,'fhir.patient.read','patient',id);
     const p=r.rows[0];
     return {resourceType:'Patient',id:p.id,identifier:p.external_id?[{system:'urn:starmed:external-id',value:p.external_id}]:[],active:true,name:[{use:'official',text:p.full_name}],gender:p.administrative_gender??'unknown',birthDate:p.birth_date instanceof Date?p.birth_date.toISOString().slice(0,10):String(p.birth_date)};
   }
   @Get('Encounter/:id')
-  async encounter(@Req() req:R,@Param('id') rawId:string) {
+  async encounter(@Req() req:RWithHeaders,@Param('id') rawId:string) {
     const actor=a(req);requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
     const r=await this.db.query<any>('SELECT * FROM encounters WHERE org_id=$1 AND id=$2',[actor.org_id,id]);
     if(!r.rowCount)throw new NotFoundException();
+    await requireCareContext(this.db,actor,r.rows[0].patient_id,breakGlassOf(req));
     await audit(this.db,actor,'fhir.encounter.read','encounter',id);
     const e=r.rows[0];
     return {resourceType:'Encounter',id:e.id,status:e.status,class:{system:'http://terminology.hl7.org/CodeSystem/v3-ActCode',code:e.type==='teleconsultation'?'VR':'AMB'},subject:{reference:'Patient/'+e.patient_id},participant:[{individual:{reference:'Practitioner/'+e.doctor_id}}],period:{start:e.started_at,end:e.ended_at??undefined},reasonCode:e.reason_for_visit?[{text:e.reason_for_visit}]:[]};
   }
   @Get('AllergyIntolerance/:id')
-  async allergy(@Req() req:R,@Param('id') rawId:string) {
+  async allergy(@Req() req:RWithHeaders,@Param('id') rawId:string) {
     const actor=a(req);requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
     const r=await this.db.query<AllergyRow>('SELECT * FROM patient_allergies WHERE org_id=$1 AND id=$2',[actor.org_id,id]);
     if(!r.rowCount)throw new NotFoundException();
+    await requireCareContext(this.db,actor,r.rows[0].patient_id,breakGlassOf(req));
     await audit(this.db,actor,'fhir.allergy.read','patient',r.rows[0].patient_id);
     return toFhirAllergy(r.rows[0]);
   }
   @Get('Condition/:id')
-  async condition(@Req() req:R,@Param('id') rawId:string) {
+  async condition(@Req() req:RWithHeaders,@Param('id') rawId:string) {
     const actor=a(req);requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
     const r=await this.db.query<ConditionRow>('SELECT * FROM patient_conditions WHERE org_id=$1 AND id=$2',[actor.org_id,id]);
     if(!r.rowCount)throw new NotFoundException();
+    await requireCareContext(this.db,actor,r.rows[0].patient_id,breakGlassOf(req));
     await audit(this.db,actor,'fhir.condition.read','patient',r.rows[0].patient_id);
     return toFhirCondition(r.rows[0]);
   }

@@ -34,6 +34,7 @@ export class AllergiesController {
     const actor=req.actor;requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
     await ensurePatient(this.db,id,actor.org_id);
+    await requireCareContext(this.db,actor,id,breakGlassOf(req));
     const records=await this.db.query('SELECT id,substance,reaction,criticality,clinical_status,verification_status,recorded_at FROM patient_allergies WHERE org_id=$1 AND patient_id=$2 ORDER BY recorded_at DESC LIMIT 200',[actor.org_id,id]);
     await audit(this.db,actor,'patient.allergies.read','patient',id);
     return records.rows;
@@ -42,6 +43,8 @@ export class AllergiesController {
   async create(@Req() req:ReqWithActor,@Param('patientId') rawId:string,@Body() raw:unknown){
     const actor=req.actor;requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId),b=parse(allergySchema,raw);
+    await ensurePatient(this.db,id,actor.org_id);
+    await requireCareContext(this.db,actor,id,breakGlassOf(req));
     return this.db.tx(async c=>{
       const record=await c.query(
         'INSERT INTO patient_allergies(org_id,patient_id,recorded_by,substance,reaction,criticality,clinical_status,verification_status) SELECT $1,id,$3,$4,$5,$6,$7,$8 FROM patients WHERE org_id=$1 AND id=$2 RETURNING id,substance,reaction,criticality,clinical_status,verification_status,recorded_at',
@@ -61,6 +64,7 @@ export class ProblemsController {
     const actor=req.actor;requireRole(actor,['doctor','nurse']);
     const id=parse(uuid,rawId);
     await ensurePatient(this.db,id,actor.org_id);
+    await requireCareContext(this.db,actor,id,breakGlassOf(req));
     const records=await this.db.query('SELECT id,display,code_system,code,clinical_status,verification_status,onset_date,recorded_at FROM patient_conditions WHERE org_id=$1 AND patient_id=$2 ORDER BY recorded_at DESC LIMIT 200',[actor.org_id,id]);
     await audit(this.db,actor,'patient.conditions.read','patient',id);
     return records.rows;
@@ -69,6 +73,8 @@ export class ProblemsController {
   async create(@Req() req:ReqWithActor,@Param('patientId') rawId:string,@Body() raw:unknown){
     const actor=req.actor;requireRole(actor,['doctor']);
     const id=parse(uuid,rawId),b=parse(problemSchema,raw);
+    await ensurePatient(this.db,id,actor.org_id);
+    await requireCareContext(this.db,actor,id,breakGlassOf(req));
     return this.db.tx(async c=>{
       const record=await c.query(
         'INSERT INTO patient_conditions(org_id,patient_id,recorded_by,display,code_system,code,clinical_status,verification_status,onset_date) SELECT $1,id,$3,$4,$5,$6,$7,$8,$9 FROM patients WHERE org_id=$1 AND id=$2 RETURNING id,display,code_system,code,clinical_status,verification_status,onset_date,recorded_at',

@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, scrypt as rawScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -117,4 +117,49 @@ export async function audit(db:QueryRunner, actor:Actor, action:string, targetTy
   const enriched = store?.requestId ? { ...details, requestId: store.requestId } : details;
   await db.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
      [actor.org_id,actor.id,action,targetType,targetId,JSON.stringify(enriched)]);
+}
+
+/**
+ * Autorização clínica contextual (P0-05 / J1 #13 / threat model §2.2.1).
+ *
+ * Prontuário COMPLETO exige contexto de cuidado: encontro, agendamento ou ter
+ * cadastrado o paciente — OU break-glass com justificativa obrigatória,
+ * auditado. A checagem de ORGANIZAÇÃO e a RLS acontecem ANTES (a query de
+ * existência devolve 404 para recurso de outro tenant); aqui só entra recurso
+ * que já é da org do ator.
+ */
+export async function resolveCareContext(db: QueryRunner, actor: Actor, patientId: string): Promise<'created'|'encounter'|'appointment'|null> {
+  const r = await db.query<{ created: boolean; encounter: boolean; appointment: boolean }>(
+    `SELECT
+       EXISTS(SELECT 1 FROM patients WHERE id=$2 AND org_id=$1 AND created_by=$3) AS created,
+       EXISTS(SELECT 1 FROM encounters WHERE patient_id=$2 AND org_id=$1) AS encounter,
+       EXISTS(SELECT 1 FROM appointments WHERE patient_id=$2 AND org_id=$1) AS appointment`,
+    [actor.org_id, patientId, actor.id]);
+  const row = r.rows[0];
+  if (!row) return null;
+  return row.created ? 'created' : row.encounter ? 'encounter' : row.appointment ? 'appointment' : null;
+}
+
+/** Valores brutos do header X-Break-Glass-Reason (enviados pela UI/chamador). */
+export function breakGlassReason(raw: unknown): string {
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+export async function requireCareContext(
+  db: QueryRunner, actor: Actor, patientId: string, breakGlassRaw: unknown
+): Promise<'vinculo'|'break-glass'> {
+  if (await resolveCareContext(db, actor, patientId)) return 'vinculo';
+  const reason = breakGlassReason(breakGlassRaw);
+  if (reason.length < 20)
+    throw new ForbiddenException(
+      'Acesso ao prontuário completo exige contexto de cuidado ' +
+      '(encontro, agendamento ou paciente cadastrado por você) ou break-glass com justificativa ' +
+      '(header X-Break-Glass-Reason, mínimo 20 caracteres).');
+  if (reason.length > 500) throw new BadRequestException('Justificativa de break-glass muito longa (máximo 500 caracteres).');
+  // A justificativa é registrada em auditoria (trilha da aplicação) — nunca em log de console.
+  await db.query(
+    'INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+    [actor.org_id, actor.id, 'access.breakglass', 'patient', patientId,
+     JSON.stringify({ reason, requestId: requestContext.getStore()?.requestId ?? null })]);
+  return 'break-glass';
 }

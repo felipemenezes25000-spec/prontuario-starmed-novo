@@ -42,14 +42,37 @@ operador de infraestrutura↔banco/backup.
 
 ### 2.2 Autorização e multi-tenant — `security.ts`, `controllers.ts`, `014_rls_optin.sql`
 
+> **Revisão estática aprofundada em 20/10/2026** (rodada V2): o snapshot do plano
+> subestimou o controle existente. O `JwtGuard` (`security.ts:78-101`) rejeita qualquer
+> token com claim `purpose` (portal E step-up MFA), exige `sub/org/ver` coerentes, e
+> confere no banco `active=true` **e** `auth_version` igual ao do token (revogação de
+> sessão funciona). Toda query de recurso clínico/identidade revisada filtra
+> `org_id` a partir do token (`controllers.ts`, `clinical-history.ts`, `addenda.ts`,
+> `hospital.ts`, `prescriptions.ts`, `signature.ts`, `fhir-extra.ts`, `portal.ts`,
+> `lgpd.ts`), com `requireRole` por recurso e colunas mínimas por papel (ex.:
+> `social_determinants` só para papéis clínicos, `password_hash` nunca sai).
+
 | Ameaça | Cenário | Controle atual | Status |
 |---|---|---|---|
-| (E) Elevation | Ler tenant B pela URL (IDOR/cross-tenant) | Queries filtram `org_id` a partir do token; RLS opt-in 014 como defesa em profundidade | `parcial` — RLS sem `FORCE` e com bypass do table owner; GUC `starmed.org_id` **não** é definida na pool (`db.ts`) |
-| (E) Elevation | Token do portal acessando rotas staff | `purpose:'portal'` rejeitado pelo `JwtGuard` (`portal.ts`, `security.ts`) | `mitigado-código` — ampliar matriz de testes negativos |
-| (E) Elevation | Sessão de usuário desativado/revogado permanece válida | `auth_version` bump em revogação; conferir enforcement no guard para **todos** os caminhos | `parcial` — revisão em andamento (P0-05) |
-| (E) Elevation | Rotas `@Public()` expõem PHI | `@Public` em `controllers.ts`, `fhir-extra.ts`, `signature.ts:327`, `teleconsult.ts:114`, `ai-clinical.ts:89,93`, `lgpd.ts`, `sso.ts`, `auth-mfa.ts` | `parcial` — inventário e endurecimento em andamento (P0-05); nenhum desses caminhos pode devolver PHI |
-| (E) Elevation | Acesso sem vínculo assistencial com o paciente | Vínculo paciente↔profissional / break-glass com justificativa | `aberto` — implementação em andamento (P0-05) |
-| (I) Info Disclosure | `CapabilityStatement`/metadata FHIR anônimo com PHI | discovery/@Public em `fhir-extra.ts` deve anunciar só capability | `parcial` — validar que search exige token |
+| (E) Elevation | Ler tenant B pela URL (IDOR/cross-tenant) | `org_id` do token em toda query + RLS opt-in 014 como defesa em profundidade | `mitigado-código` (RLS com bypass do owner — ver below) |
+| (E) Elevation | Token do portal acessando rotas staff | Guard rejeita **qualquer** token com `purpose` (`security.ts:90`); portal verifica `purpose:'portal'` próprio | `mitigado-código` |
+| (E) Elevation | Token de step-up MFA virando sessão | Mesma rejeição de `purpose` no guard; `mfaToken` de 5 min só libera `/auth/mfa/verify|recovery` | `mitigado-código` |
+| (E) Elevation | Sessão de usuário desativado/revogado permanece válida | `active` + `auth_version` conferidos **a cada request** no guard | `mitigado-código` |
+| (E) Elevation | Rotas `@Public()` expõem PHI | Inventário completo: health, login, MFA step-up, SSO callback, metadata/SMART (capability sem PHI), CDS discovery (lista), `/verify/:id` do ITI (exige código de uso único), portal (verifica token purpose=portal manualmente), teleconsulta join-patient (exige convite hash+expiração+uso único). `POST cds-services/:hook` deixou de ser anônimo nesta rodada | `mitigado-código` — manter teste negativo no CI/E2E |
+| (E) Elevation | Acesso sem vínculo assistencial com o paciente | Leitura de paciente exige papel clínico/recepção + toda leitura é auditada (`patient.read`, `note.read`, `fhir.*.read`); **vínculo formal e break-glass: pendente de desenho** (ver 2.2.1) | `parcial` |
+| (I) Info Disclosure | Enumeração de e-mail entre tenants em `POST /users` | Unicidade de e-mail é global por desenho (login simples); o 409 revela existência | `parcial` — aceitar enquanto login for por e-mail global; remover com migração para login por org |
+| (I) Info Disclosure | `CapabilityStatement`/metadata FHIR anônimo com PHI | @Public só capability/discovery; busca exige token + papel | `mitigado-código` |
+
+#### 2.2.1 Decisão de desenho registrada: vínculo assistencial × continuidade do cuidado
+
+Um gate "só lê o paciente com quem tenho encontro" **quebraria o fluxo ambulatorial
+normal** (o médico abre o prontuário longitudinal ANTES de criar o encontro). A regra
+correta a implementar (backlog P0-05 residual) é: **busca = dados mínimos + auditoria**
+(já existe) → **prontuário completo exige contexto de atendimento** (encontro ativo/
+recente, vínculo de equipe cadastrado OU break-glass com justificativa obrigatória,
+nunca silencioso), com a fila de break-glass revisável por supervisão. Enquanto isso
+não existe, o controle real é a **auditoria de toda leitura** + isolamento de tenant —
+não declarar "acesso por vínculo" como cumprido.
 
 ### 2.3 Notas clínicas e imutabilidade — `domain.ts`, `addenda.ts`, `00X`/`schema.sql:181`
 
@@ -112,8 +135,8 @@ operador de infraestrutura↔banco/backup.
 
 | Ameaça | Cenário | Controle atual | Status |
 |---|---|---|---|
-| (T) | Admin de banco reescrever auditoria | Trigger append-only + `audit_events`; WORM/encadeamento externo | `parcial` — append-only é camiso, não imutabilidade; cadeia digest externa pendente |
-| (I) | Logs com PHI | Revisão de `console.log` sem texto clínico (P0-05/P0-09) | em revisão |
+| (T) | Admin de banco reescrever auditoria | Trigger append-only + `audit_events`; WORM/encadeamento externo pendente | `parcial` — append-only é camiso, não imutabilidade; cadeia digest externa pendente |
+| (I) | Logs com PHI | Varredura estática em 20/10/2026: nenhum `console.*` com texto clínico em `apps/api/src`; cada evento de auditoria carrega `requestId` propagado por `AsyncLocalStorage` (`security.ts`, `main.ts`) para correlação sem PHI | `mitigado-código` |
 | (D) | Perda de disco/ransomware | `docs/BACKUP_RUNBOOK.md`, `scripts/backup/*`, drills | `parcial` — restore não revalidado em infra-alvo nesta rodada |
 | (T) | Migração corrompe base | Runner versionado com checksum/drift fail-closed (`apps/api/src/migrate.ts`) | `mitigado-código` — execução pendente |
 

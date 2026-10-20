@@ -31,8 +31,8 @@
 | H-10 | QR/código público vaza PHI | 3 | Média | QR com referência mínima, acesso controlado (D4.7) | `parcial` | Revisão do payload do QR #11 |
 | H-11 | Documento/receita entregue a destinatário errado ou link expirado vazando | 4 | Média | Link temporário com expiração, escopo e anti-enumeração; outbox com opt-out | `parcial` | E2E de entrega e revogação de link |
 | H-12 | Resultado crítico comunicado só por push, sem confirmação | 4 | Média | Fila de comunicação com reconhecimento auditado (D5) | `aberto` | Implementar fluxo de critical results #12 |
-| H-13 | Profissional sem vínculo acessa prontuário | 4 | Média | Vínculo assistencial + break-glass justificado (P0-05, em andamento) | em implementação | Matriz ABAC executada #13 |
-| H-14 | Dados do tenant B acessados via URL/token do tenant A | 4 | Alta | Filtro `org_id` por request + RLS 014 (opt-in) | `parcial` | GUC transacional + role não-owner + testes cross-tenant #14 |
+| H-13 | Profissional sem vínculo acessa prontuário | 4 | Média | Papel clínico obrigatório + auditoria de TODA leitura (`patient.read`, `note.read`, `fhir.*.read`); vínculo/break-glass formal: pendência de desenho registrada (threat model §2.2.1) | `parcial` | Implementar contexto de atendimento + break-glass justificado #13 |
+| H-14 | Dados do tenant B acessados via URL/token do tenant A | 4 | Alta | `org_id` do token em toda query (revisão estática 20/10) + RLS 014 (opt-in, owner bypass) | `parcial` | GUC transacional + role não-owner + testes cross-tenant #14 |
 | H-15 | Token do paciente acessa rotas staff (`/users`, `/patients`) | 4 | Alta | `purpose:'portal'` rejeitado no `JwtGuard` | `mitigado-código` | Teste negativo executado #15 |
 | H-16 | Admin assina nota clínica sem habilitação | 4 | Alta | Assinatura exige papel clínico habilitado (403) | `parcial` | Teste #16 em execução |
 | H-17 | Nota assinada sofre UPDATE/DELETE | 4 | Alta | Trigger `forbid_signed_note_mutations()` + CHECKs + adendo | `mitigado-código` | Teste #17; cadeia digest externa |

@@ -20,11 +20,12 @@ MVP original de EHR/EMR para equipes clínicas, inspirado em boas práticas púb
 3. Atualize `AUTH_SECRET` com um segredo aleatório >=32 caracteres; defina senhas diferentes para o PostgreSQL e o bootstrap. Ajuste a URL do banco.
 4. `docker compose up -d`
 5. `npm install`
-6. `npm run bootstrap`
-7. Em terminais separados: `npm run dev:api` e `npm run dev:web`
-8. Acesse http://localhost:5173; autentique como admin, cadastre um médico em **Equipe**, e entre como médico para criar evoluções.
+6. `npm run migrate` — aplica `database/schema.sql` + migrações `002`..`014` com registro de versão/checksum (`schema_migrations`); consulte `npm run migrate -- --dry-run` para planejar.
+7. `npm run bootstrap`
+8. Em terminais separados: `npm run dev:api` e `npm run dev:web`
+9. Acesse http://localhost:5173; autentique como admin, cadastre um médico em **Equipe**, e entre como médico para criar evoluções.
 
-Execute `npm test` e `npm run build` antes de uso local; `npm run smoke` requer um banco **descartável** e a flag `STARMED_TEST_DB=true`. Os testes não foram executados neste ambiente.
+Execute `npm test` e `npm run build` antes de uso local; `npm run smoke` requer um banco **descartável** e a flag `STARMED_TEST_DB=true`. Os testes não foram executados neste ambiente durante a rodada de execução de 20/10/2026 — a primeira verificação executada é o CI do GitHub Actions após o push.
 
 Consulte [instruções detalhadas](docs/getting-started.md), [arquitetura e roadmap](docs/architecture.md), [sincronização offline](docs/offline-sync.md) e [prompt de extração clínica](prompts/clinical-extraction.md).
 
@@ -73,10 +74,15 @@ TSA desligado, workflows de deploy AWS/RenoveJa, branding e material comercial.
 - `npm run build` — API + Web compilando (corrigido `React` UMD em `apps/web/src/main.tsx`).
 
 ## Próximas etapas prioritárias
-- Login corporativo via OIDC/MFA, sessões e revogação, rate limit distribuído, gestão de acesso clínico e infraestrutura com TLS.
-- Migrações versionadas, testes Postgres e E2E, backup/restore, observabilidade, segurança ofensiva e proteção dos dispositivos.
-- Validação FHIR por perfis aplicáveis, DICOMweb/LIS, TISS, assinatura digital legal, fluxos de prescrição e aditamentos pós-assinatura.
-- Revisão clínica, jurídica, LGPD, HIPAA (quando aplicável) e certificações pertinentes.
+- Homologação OIDC de um IdP real, rate limit distribuído, infraestrutura com TLS e revogação de sessão em múltiplas instâncias.
+- Testes Postgres/E2E executados e evidência de CI verde em 3 runs consecutivos; backup/restore revalidados na infra-alvo com RPO/RTO medidos.
+- Validação FHIR por perfis aplicáveis, DICOMweb/LIS, TISS, validação de PAdES no validador do ITI, homologação ACT/TSA, motor de segurança medicamentosa com base licenciada.
+- Revisão clínica, jurídica, LGPD, HIPAA (quando aplicável) e certificações pertinentes — nomeação dos responsáveis clínico/farmacêutico/DPO.
+
+## Documentos de segurança e segurança clínica gerados nesta rodada
+- `docs/security/THREAT-MODEL-STRIDE.md` — ameaças por domínio, controles, status e bloqueios externos.
+- `docs/clinical/HAZARD-LOG-FMEA.md` — perigos assistenciais, severidade, controles e gates NO-GO.
+- `docs/engineering/EXECUCAO_2026-10-20.md` — matriz requisito → implementação → validação pendente.
 
 ## Referências abertas
 HL7 FHIR R4: https://hl7.org/fhir/R4/  

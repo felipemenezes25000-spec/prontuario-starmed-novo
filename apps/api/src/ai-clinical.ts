@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Db } from './db';
 import { aiSuggestionSchema, parse, uuid } from './domain';
-import { Actor, Public, audit, requireRole } from './security';
+import { Actor, Public, audit, requestContext, requireRole } from './security';
 
 /**
  * IA clínica com revisão humana OBRIGATÓRIA (CFM 2.454/2026): toda sugestão
@@ -155,8 +155,8 @@ export class AiClinicalController {
           [actor.org_id, encounterId, kind, JSON.stringify(suggestion), process.env.LLM_MODEL || 'unknown', actor.id]);
         await c.query('INSERT INTO idempotency_keys(org_id,key,operation,response) VALUES($1,$2,$3,$4)',
           [actor.org_id, body.operationId, `ai.${kind}:${encounterId}`, JSON.stringify(row.rows[0])]);
-        await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',
-          [actor.org_id, actor.id, `ai.${kind}.requested`, 'encounter', encounterId]);
+        await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+          [actor.org_id, actor.id, `ai.${kind}.requested`, 'encounter', encounterId, JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
         return row.rows[0];
       });
       return { suggestionId: stored.id, suggestion, status: 'pending', reviewRequired: true };

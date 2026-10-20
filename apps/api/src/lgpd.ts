@@ -2,7 +2,7 @@ import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundE
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
-import { Actor, audit, requireRole } from './security';
+import { Actor, audit, requestContext, requireRole } from './security';
 import { verifyPortalToken } from './portal';
 import { Public } from './security';
 
@@ -228,8 +228,10 @@ export class PatientLgpdController {
     const row = await this.db.query<any>(
       'INSERT INTO lgpd_requests(org_id,patient_id,kind,deadline_days,requested_channel) VALUES($1,$2,$3,$4,$5) RETURNING id,kind,status,due_at',
       [session.orgId, session.patientId, body.kind, body.deadlineDays, body.channel]);
-    await this.db.query('INSERT INTO audit_events(org_id,action,target_type,target_id) VALUES($1,$2,$3,$4)',
-      [session.orgId, 'lgpd.request.created.portal', 'patient', session.patientId]);
+    await this.db.query(
+      'INSERT INTO audit_events(org_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5)',
+      [session.orgId, 'lgpd.request.created.portal', 'patient', session.patientId,
+       JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
     return row.rows[0];
   }
 
@@ -241,8 +243,10 @@ export class PatientLgpdController {
     const row = await this.db.query<any>(
       'INSERT INTO lgpd_consents(org_id,patient_id,purpose,granted,source) VALUES($1,$2,$3,$4,\'portal\') RETURNING id,purpose,granted,created_at',
       [session.orgId, session.patientId, body.purpose, body.granted]);
-    await this.db.query('INSERT INTO audit_events(org_id,action,target_type,target_id) VALUES($1,$2,$3,$4)',
-      [session.orgId, 'lgpd.consent.recorded.portal', 'patient', session.patientId]);
+    await this.db.query(
+      'INSERT INTO audit_events(org_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5)',
+      [session.orgId, 'lgpd.consent.recorded.portal', 'patient', session.patientId,
+       JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
     return row.rows[0];
   }
 

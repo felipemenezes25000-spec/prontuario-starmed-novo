@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { NestFactory } from '@nestjs/core';
@@ -9,7 +10,7 @@ import { AllergiesController, ProblemsController } from './clinical-history';
 import { MfaController, MfaService } from './auth-mfa';
 import { SsoController, OidcService } from './sso';
 import { Db } from './db';
-import { JwtGuard } from './security';
+import { JwtGuard, requestContext } from './security';
 import { HealthController, AuthController, UsersController, PatientsController, AppointmentsController, EncountersController, FhirController, AiController } from './controllers';
 import { FhirExtraController, SmartWellKnownController } from './fhir-extra';
 import { SignatureController, SignatureVerifyController } from './signature';
@@ -48,6 +49,14 @@ async function bootstrap(){
   // Rota pública do Guia ITI (VALIDAR): sem limite por IP do validador, mas com teto defensivo.
   app.use('/verify',limiter('Excesso de consultas de validação; tente mais tarde',120));
   app.use((req:any,res:any,next:any)=>{res.setHeader('Cache-Control','no-store'); next();});
+  // Request-Id (P0-05/C5): aceita um id saudável do chamador ou gera um; sempre
+  // ecoado no header e propagado ao contexto (audit_events.details.requestId).
+  app.use((req:any,res:any,next:any)=>{
+    const incoming=typeof req.headers['x-request-id']==='string'?req.headers['x-request-id']:'';
+    const requestId=/^[\w.:-]{1,64}$/.test(incoming)?incoming:randomUUID();
+    res.setHeader('X-Request-Id',requestId);
+    requestContext.run({requestId},next);
+  });
   // PATCH é necessário: rotas @Patch existentes (ex.: PATCH /hospital/orders/:id/status,
   // PATCH /prescriptions/:id) falhariam no preflight do navegador sem ele.
   app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,PATCH,OPTIONS',allowedHeaders:'Authorization,Content-Type'});

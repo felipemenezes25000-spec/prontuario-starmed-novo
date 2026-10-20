@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
-import { Actor, Public, audit, requireRole, sha256Hex } from './security';
+import { Actor, Public, audit, requestContext, requireRole, sha256Hex } from './security';
 
 /**
  * Teleconsulta: signaling WebRTC por REST (oferta/resposta/ICE via filas com seq).
@@ -74,8 +74,8 @@ export class TeleconsultController {
         'INSERT INTO teleconsult_invites(org_id,room_id,patient_id,code_hash,expires_at) ' +
         'SELECT $1,$2,e.patient_id,$4,now()+interval \'6 hours\' FROM encounters e WHERE e.id=$2 AND e.org_id=$1',
         [actor.org_id, inserted.rows[0].id, null, sha256Hex(normalizeInvite(inviteCode))]);
-      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',
-        [actor.org_id, actor.id, 'teleconsult.room.created', 'teleconsult_room', inserted.rows[0].id]);
+      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+        [actor.org_id, actor.id, 'teleconsult.room.created', 'teleconsult_room', inserted.rows[0].id, JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
       return inserted.rows[0];
     });
     return { ...room, inviteCode, inviteExpiresInHours: 6 };
@@ -132,8 +132,9 @@ export class TeleconsultController {
     const next = transitionRoom(current, 'join');
     await this.db.query('UPDATE teleconsult_rooms SET status=$2 WHERE id=$1', [id, next]);
     // Sem sessão do paciente nesta etapa: a auditoria registra o ato sem actor de usuário.
-    await this.db.query('INSERT INTO audit_events(org_id,action,target_type,target_id) VALUES($1,$2,$3,$4)',
-      [orgId, 'teleconsult.patient.joined', 'teleconsult_room', id]);
+    await this.db.query('INSERT INTO audit_events(org_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5)',
+      [orgId, 'teleconsult.patient.joined', 'teleconsult_room', id,
+       JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
     return { id, status: next };
   }
 

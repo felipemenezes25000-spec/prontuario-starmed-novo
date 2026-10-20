@@ -1,13 +1,16 @@
 import { Controller, Get, Post, Put, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
 import { Db } from './db';
 import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } from './fhir-mappers';
-import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireRole, sessionResponse, verifyPassword } from './security';
+import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireRole, requestContext, sessionResponse, verifyPassword } from './security';
 import { aiSchema, aiSuggestionSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, signSchema, uuid } from './domain';
 
 type R = {actor:Actor};
 const a=(r:R)=>r.actor;
-const auditQuery = (c:any, actor:Actor, action:string, type:string, id:string|null) =>
-  c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',[actor.org_id,actor.id,action,type,id]);
+const auditQuery = (c:any, actor:Actor, action:string, type:string, id:string|null) => {
+  const requestId=requestContext.getStore()?.requestId;
+  return c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+    [actor.org_id,actor.id,action,type,id,JSON.stringify(requestId?{requestId}:{})]);
+};
 
 @Controller('health')
 export class HealthController {

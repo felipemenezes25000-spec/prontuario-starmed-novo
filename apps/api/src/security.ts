@@ -1,12 +1,21 @@
 import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, scrypt as rawScrypt, timingSafeEqual } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { promisify } from 'node:util';
 import { SignJWT, jwtVerify } from 'jose';
 import { Db } from './db';
 import { env } from './config';
 
 const scrypt = promisify(rawScrypt);
+
+/**
+ * Contexto por requisição (P0-05/C5): o requestId é gerado no middleware
+ * (main.ts) e anexado a CADA evento de auditoria, permitindo correlacionar
+ * logs, respostas e trilha sem passar o pedido por todos os call sites.
+ */
+export const requestContext = new AsyncLocalStorage<{ requestId: string }>();
+
 export type Actor = { id:string; org_id:string; role:'admin'|'doctor'|'nurse'|'reception'; email:string; auth_version:number };
 export const IS_PUBLIC_KEY = 'starmed:isPublic';
 /** Marks a route as reachable without a session (health, login, MFA step-up, SSO callbacks). */
@@ -101,6 +110,10 @@ export class JwtGuard implements CanActivate {
 }
 export type QueryRunner = { query(sql:string, values?:any[]):Promise<any> };
 export async function audit(db:QueryRunner, actor:Actor, action:string, targetType:string, targetId:string|null, details:Record<string,unknown>={}) {
+  // requestId do contexto da requisição entra em TODOS os eventos (correlação);
+  // nunca texto clínico — só metadados passados pelos call sites.
+  const requestId = requestContext.getStore()?.requestId ?? null;
+  const enriched = requestId ? { ...details, requestId } : details;
   await db.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
-     [actor.org_id,actor.id,action,targetType,targetId,JSON.stringify(details)]);
+     [actor.org_id,actor.id,action,targetType,targetId,JSON.stringify(enriched)]);
 }

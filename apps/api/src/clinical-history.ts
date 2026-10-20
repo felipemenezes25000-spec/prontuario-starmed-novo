@@ -2,7 +2,7 @@ import { Body, Controller, Get, NotFoundException, Param, Post, Req } from '@nes
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
-import { Actor, audit, requireRole } from './security';
+import { Actor, audit, requestContext, requireRole } from './security';
 
 type ReqWithActor = { actor:Actor };
 const allergySchema=z.object({
@@ -47,7 +47,7 @@ export class AllergiesController {
         'INSERT INTO patient_allergies(org_id,patient_id,recorded_by,substance,reaction,criticality,clinical_status,verification_status) SELECT $1,id,$3,$4,$5,$6,$7,$8 FROM patients WHERE org_id=$1 AND id=$2 RETURNING id,substance,reaction,criticality,clinical_status,verification_status,recorded_at',
         [actor.org_id,id,actor.id,b.substance,b.reaction||null,b.criticality,b.clinicalStatus,b.verificationStatus]);
       if(!record.rowCount)throw new NotFoundException('Paciente não encontrado');
-      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',[actor.org_id,actor.id,'patient.allergy.recorded','patient',id]);
+      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',[actor.org_id,actor.id,'patient.allergy.recorded','patient',id,JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
       return record.rows[0];
     });
   }
@@ -74,7 +74,7 @@ export class ProblemsController {
         'INSERT INTO patient_conditions(org_id,patient_id,recorded_by,display,code_system,code,clinical_status,verification_status,onset_date) SELECT $1,id,$3,$4,$5,$6,$7,$8,$9 FROM patients WHERE org_id=$1 AND id=$2 RETURNING id,display,code_system,code,clinical_status,verification_status,onset_date,recorded_at',
         [actor.org_id,id,actor.id,b.display,b.codeSystem||null,b.code||null,b.clinicalStatus,b.verificationStatus,b.onsetDate||null]);
       if(!record.rowCount)throw new NotFoundException('Paciente não encontrado');
-      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',[actor.org_id,actor.id,'patient.condition.recorded','patient',id]);
+      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',[actor.org_id,actor.id,'patient.condition.recorded','patient',id,JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
       return record.rows[0];
     });
   }

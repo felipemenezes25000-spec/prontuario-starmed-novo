@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Db } from './db';
 import { env } from './config';
 import { parse, uuid } from './domain';
-import { Actor, Public, audit, hashPassword, requireRole, sha256Hex, verifyPassword } from './security';
+import { Actor, Public, audit, hashPassword, requestContext, requireRole, sha256Hex, verifyPassword } from './security';
 
 /**
  * Portal do paciente (LGPD: acesso mínimo necessário — cada conta vê apenas o
@@ -139,8 +139,8 @@ export class StaffPortalController {
       const created = await c.query<any>(
         'INSERT INTO portal_accounts(org_id,patient_id,email,password_hash) VALUES($1,$2,$3,$4) RETURNING id',
         [org_id, patient_id, body.email, await hashPassword(body.password)]);
-      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',
-        [org_id, null, 'portal.account.created', 'patient', patient_id]);
+      await c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+        [org_id, null, 'portal.account.created', 'patient', patient_id, JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
       return { accountId: created.rows[0].id, orgId: org_id, patientId: patient_id };
     });
     return { activated: true, accessToken: await issuePortalToken(account) };
@@ -206,8 +206,8 @@ export class PatientPortalController {
        FROM encounters e JOIN clinical_notes n ON n.encounter_id = e.id AND n.org_id = e.org_id
        WHERE e.org_id=$1 AND e.patient_id=$2 AND n.status='signed' ORDER BY n.signed_at DESC LIMIT 100`,
       [session.orgId, session.patientId]);
-    await this.db.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',
-      [session.orgId, null, 'portal.documents.read', 'patient', session.patientId]);
+    await this.db.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+      [session.orgId, null, 'portal.documents.read', 'patient', session.patientId, JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
     return rows.rows;
   }
 
@@ -227,6 +227,8 @@ export class PatientPortalController {
           JSON.stringify({ specialty: body.preferredSpecialty, period: body.preferredPeriod })]);
       return row.rows[0];
     });
+    await this.db.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+      [session.orgId, null, 'portal.appointment_request.created', 'patient', session.patientId, JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
     return created;
   }
 }

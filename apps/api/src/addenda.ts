@@ -1,7 +1,7 @@
 import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Req } from '@nestjs/common';
 import { Db } from './db';
 import { addendumSchema, parse, uuid } from './domain';
-import { Actor, audit, requireRole } from './security';
+import { Actor, audit, requestContext, requireRole } from './security';
 
 type RequestWithActor = { actor: Actor };
 
@@ -51,8 +51,8 @@ export class ClinicalAddendaController {
         'INSERT INTO clinical_note_addenda(org_id,note_id,author_id,reason,content) VALUES($1,$2,$3,$4,$5) RETURNING id,note_id,author_id,reason,content,signed_at',
         [actor.org_id,n.rows[0].id,actor.id,body.reason,body.content]);
       await client.query(
-        'INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id) VALUES($1,$2,$3,$4,$5)',
-        [actor.org_id,actor.id,'note.addendum.signed','encounter',encounterId]);
+        'INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
+        [actor.org_id,actor.id,'note.addendum.signed','encounter',encounterId,JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
       await client.query(
         'INSERT INTO idempotency_keys(org_id,key,operation,response) VALUES($1,$2,$3,$4)',
         [actor.org_id,body.operationId,'note.addendum:'+encounterId,JSON.stringify(inserted.rows[0])]);

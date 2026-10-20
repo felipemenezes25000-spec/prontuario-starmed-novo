@@ -3,7 +3,7 @@ import { Db } from './db';
 import { env } from './config';
 import { mfaActivateSchema, mfaPasswordConfirmSchema, mfaRecoverySchema, mfaVerifySchema, parse } from './domain';
 import {
-  Actor, Public, SessionUser, audit, openSecret, sealSecret, sessionResponse, verifyMfaStepToken,
+  Actor, Public, SessionUser, audit, openSecret, sealSecret, sessionResponse, setOrgContext, verifyMfaStepToken,
   verifyPassword
 } from './security';
 import {
@@ -128,6 +128,8 @@ export class MfaController {
   async verify(@Body() raw: unknown) {
     const body = parse(mfaVerifySchema, raw);
     const user = await this.mfa.loadMfaUser(body.mfaToken);
+    // Step-up é pré-sessão: publica o tenant aqui para as queries RLS seguintes.
+    setOrgContext(user.org_id);
     if (!this.mfa.currentTotp(user.mfa_secret!, body.code)) {
       await audit(this.db, user, 'auth.mfa.verify.failed', 'user', user.id);
       throw new UnauthorizedException('Código inválido');
@@ -141,6 +143,7 @@ export class MfaController {
   async recovery(@Body() raw: unknown) {
     const body = parse(mfaRecoverySchema, raw);
     const user = await this.mfa.loadMfaUser(body.mfaToken);
+    setOrgContext(user.org_id);
     const hash = recoveryCodeHash(body.recoveryCode);
     const consumed = await this.db.query(
       'UPDATE mfa_recovery_codes SET used_at=now() WHERE org_id=$1 AND user_id=$2 AND code_hash=$3 AND used_at IS NULL RETURNING id',

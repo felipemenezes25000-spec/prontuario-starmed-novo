@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Db } from './db';
 import { env } from './config';
 import { parse, uuid } from './domain';
-import { Actor, Public, audit, hashPassword, requestContext, requireRole, sha256Hex, verifyPassword } from './security';
+import { Actor, Public, audit, hashPassword, requestContext, requireRole, setOrgContext, sha256Hex, verifyPassword } from './security';
 
 /**
  * Portal do paciente (LGPD: acesso mínimo necessário — cada conta vê apenas o
@@ -91,6 +91,9 @@ export async function verifyPortalToken(token: string): Promise<PortalSession> {
     });
     if (payload.purpose !== 'portal' || !payload.sub || typeof payload.org !== 'string' || typeof payload.patient !== 'string')
       throw new Error('invalid');
+    // Sessão do portal resolve o tenant a partir do TOKEN: publica o contexto
+    // para que todas as queries RLS desta requisição rorem com a org certa.
+    setOrgContext(payload.org);
     return { accountId: payload.sub, orgId: payload.org, patientId: payload.patient };
   } catch {
     throw new UnauthorizedException('Sessão do portal inválida ou expirada');
@@ -134,6 +137,10 @@ export class StaffPortalController {
         [codeHash]);
       if (!invite.rowCount) throw new UnauthorizedException('Convite inválido ou expirado');
       const { org_id, patient_id } = invite.rows[0];
+      // O convite (segredo) resolve o ANTES do contexto de tenant: publica o
+      // contexto no store E na transação aberta para as escritas seguintes.
+      setOrgContext(org_id);
+      await c.query(`SELECT set_config('starmed.org_id',$1,true)`, [org_id]);
       const existing = await c.query('SELECT 1 FROM portal_accounts WHERE org_id=$1 AND lower(email)=lower($2)', [org_id, body.email]);
       if (existing.rowCount) throw new UnauthorizedException('Convite inválido ou expirado'); // sem oracle de e-mail
       const created = await c.query<any>(

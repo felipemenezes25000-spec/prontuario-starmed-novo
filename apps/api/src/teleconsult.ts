@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
-import { Actor, Public, audit, requestContext, requireRole, sha256Hex } from './security';
+import { Actor, Public, audit, requestContext, requireRole, setOrgContext, sha256Hex } from './security';
 
 /**
  * Teleconsulta: signaling WebRTC por REST (oferta/resposta/ICE via filas com seq).
@@ -116,12 +116,18 @@ export class TeleconsultController {
   async joinPatient(@Param('id') rawId: string, @Body() raw: unknown) {
     const id = parse(uuid, rawId);
     const body = parse(joinPatientSchema, raw);
+    // Só a tabela de convites (tier2) — o JOIN com a sala (tier1) viria antes do
+    // contexto de tenant e a RLS esconderia a sala, negando o acesso legítimo.
+    // O código do convite é o que autoriza; o hash não vaza.
     const invites = await this.db.query<any>(
-      'SELECT i.id,i.code_hash,i.expires_at,i.used_at,i.org_id FROM teleconsult_invites i JOIN teleconsult_rooms r ON r.id=i.room_id WHERE r.id=$1',
+      'SELECT i.id,i.code_hash,i.expires_at,i.used_at,i.org_id FROM teleconsult_invites i WHERE i.room_id=$1',
       [id]);
     const now = new Date();
     const match = invites.rows.find((row) => isValidInvite(row, body.inviteCode, now));
     if (!match) throw new UnauthorizedException('Convite inválido ou expirado');
+    // Convite válido (segredo) resolve o tenant ANTES das leituras/escritas de
+    // dado clínico desta requisição pública (RLS via starmed.org_id).
+    setOrgContext(match.org_id);
     await this.db.query('UPDATE teleconsult_invites SET used_at=now() WHERE id=$1 AND used_at IS NULL', [match.id]);
     const orgId: string = match.org_id;
     const room = await this.db.query<any>('SELECT id,status,recording_consent FROM teleconsult_rooms WHERE id=$1 AND org_id=$2', [id, orgId]);

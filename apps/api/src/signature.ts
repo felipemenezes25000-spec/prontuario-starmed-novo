@@ -3,7 +3,7 @@ import { X509Certificate, createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
-import { Actor, audit, Public, requireRole } from './security';
+import { Actor, audit, Public, requireRole, setOrgContext } from './security';
 import { signPades, verifyPades } from './pki/pades';
 import { TsaFailureCategory, TsaError, requestTimestamp, tsaConfigFromEnv } from './pki/tsa';
 import { TrustStore, TrustStoreError } from './pki/trust-store';
@@ -355,22 +355,28 @@ export class SignatureVerifyController {
 
     const parsedId = uuid.safeParse(id);
     if (!parsedId.success) throw new NotFoundException('Documento assinado não encontrado');
+
+    // 1) Consumo ATÔMICO de uso único (J1: replay não reutiliza o código) — e é
+    //    o PRIMEIRO passo de propósito: a tabela de códigos é "tier2" (lookup por
+    //    segredo, antes do contexto de tenant) e o RETURNING entrega a org que
+    //    resolve o contexto para ler document_signatures (tier1, RLS estrito).
+    //    Código errado E código já usado respondem 401 com a MESMA mensagem.
+    const expected = hashVerifyCode(query._secretCode);
+    const consumed = await this.db.query<{ org_id: string }>(
+      `UPDATE signature_verify_codes SET used_at = now()
+        WHERE document_id = $1 AND code_hash = $2 AND used_at IS NULL
+        RETURNING org_id`,
+      [parsedId.data, expected]);
+    if (!consumed.rowCount) throw new UnauthorizedException('Código de verificação inválido');
+    setOrgContext(consumed.rows[0].org_id);
+
+    // 2) Com o contexto de tenant publicado, a assinatura só aparece se pertencer
+    //    à org do código (RLS) — e o tipo precisa bater com o pedido do ITI.
     const { rows } = await this.db.query(
       'SELECT id, document_type FROM document_signatures WHERE id = $1', [parsedId.data]);
     const signature = rows[0];
     if (!signature || signature.document_type !== documentType)
       throw new NotFoundException('Documento assinado não encontrado');
-
-    // Consumo ATÔMICO de uso único (J1: replay não reutiliza o código): o UPDATE
-    // com `used_at IS NULL` é a própria checagem — código errado E código já usado
-    // respondem 401 com a MESMA mensagem (sem enumeração).
-    const expected = hashVerifyCode(query._secretCode);
-    const consumed = await this.db.query(
-      `UPDATE signature_verify_codes SET used_at = now()
-        WHERE document_id = $1 AND code_hash = $2 AND used_at IS NULL
-        RETURNING code_hash`,
-      [signature.id, expected]);
-    if (!consumed.rowCount) throw new UnauthorizedException('Código de verificação inválido');
 
     const baseUrl = verifyBaseUrl();
     const documentKey = documentType === 'prescription' ? 'prescription' : 'examRequest';

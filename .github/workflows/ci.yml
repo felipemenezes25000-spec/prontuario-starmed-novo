@@ -60,9 +60,17 @@ jobs:
         run: npm run build
       - name: Schema e migrações versionadas (fail-closed)
         run: npm run migrate -w @starmed/api
+      - name: Provisionar credencial do papel de aplicação (não-owner)
+        run: node scripts/db/setup-app-role.mjs
+        env:
+          STARMED_APP_ROLE_PASSWORD: app-ci-only-not-prod-2026
       - name: Bootstrap de organização e admin sintéticos
         run: npm run bootstrap -w @starmed/api
       - name: Iniciar API em banco descartável e aguardar /health
+        # A API roda como starmed_app (papel NÃO-owner): é esse caminho que
+        # exercita as policies de RLS (018) — não o dono superusuário.
+        env:
+          DATABASE_URL: postgres://starmed_app:app-ci-only-not-prod-2026@127.0.0.1:5432/starmed_test
         run: |
           set -euo pipefail
           nohup npm run start -w @starmed/api > /tmp/api.log 2>&1 &
@@ -84,6 +92,13 @@ jobs:
         run: npm run smoke -w @starmed/api
       - name: Smoke — MFA TOTP, step-up e recuperação
         run: npm run smoke:mfa -w @starmed/api
+      - name: Drill cross-tenant — 2 orgs pela API (RLS real)
+        run: >-
+          node scripts/rls/cross-tenant-drill.mjs
+          --api http://127.0.0.1:3001
+          --url "$DATABASE_URL"
+          --email ci-admin@starmed.invalid
+          --password Ci-Only-Admin-P4ssw0rd-2026
       - name: Logs da API (diagnóstico, sempre)
         if: always()
         run: cat /tmp/api.log 2>/dev/null || true

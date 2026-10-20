@@ -163,9 +163,20 @@ export function stampByteRange(pdf: Buffer): Buffer {
   const b = close;
   const c = pdf.length;
   const digits = (n: number) => { const s = String(n); if (s.length > 10) throw new Error('ByteRange excede 10 dígitos'); return s.padStart(10, '0'); };
+  const prefix = '/ByteRange ';
   const replacement = `[${digits(a)} ${digits(b)} ${digits(c)}]`;
-  const stamped = text.replace(/\/ByteRange \[\d{10} \d{10} \d{10} \d{10}\]/, `/ByteRange ${replacement}`);
-  if (stamped.length !== text.length) throw new Error('ByteRange com largura diferente do slot (offsets mudariam)');
+  if (replacement.length !== BYTERANGE_SLOT.length)
+    throw new Error('ByteRange com largura diferente do slot (offsets mudariam)');
+  // indexOf determinístico contra a CONSTANTE do slot (sem armadilhas de replace).
+  const slot = prefix + BYTERANGE_SLOT;
+  const slotAt = text.indexOf(slot);
+  if (slotAt < 0) {
+    // Idempotência: slot já preenchido com valores consistentes → não regrava.
+    if (/\/ByteRange \[\d{10} \d{10} \d{10} \d{10}\]/.test(text)) return pdf;
+    throw new Error('slot /ByteRange zerado não encontrado');
+  }
+  const stamped = text.slice(0, slotAt) + prefix + replacement + text.slice(slotAt + slot.length);
+  if (stamped.length !== text.length) throw new Error('ByteRange alterou o tamanho do arquivo');
   return Buffer.from(stamped, 'latin1');
 }
 

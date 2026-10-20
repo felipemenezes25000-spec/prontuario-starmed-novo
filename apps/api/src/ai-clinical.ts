@@ -1,4 +1,4 @@
-﻿import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, Req, ServiceUnavailableException } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, Req, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Db } from './db';
@@ -90,7 +90,9 @@ export class AiClinicalController {
   @Get('cds-services')
   services() { return { services: CDS_SERVICES }; }
 
-  @Public()
+  // O hook devolve cartões derivados do payload recebido: exige sessão autenticada
+  // (um provedor externo de CDS deve se registrar com OAuth/SMART próprio — pendência
+  // de homologação, não motivo para manter rota anônima).
   @Post('cds-services/:hook')
   async hook(@Param('hook') hook: string, @Body() raw: unknown) {
     if (!CDS_SERVICES.some((s) => s.id === hook)) throw new NotFoundException('Serviço CDS inexistente');

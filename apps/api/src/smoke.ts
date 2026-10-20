@@ -83,20 +83,43 @@ async function main(){
   // --- Lacunas do aceite C1 fechadas nesta rodada (dados 100% sintéticos) ---
 
   // 1) Prescrição de ponta a ponta: rascunho estruturado → alertas → atestação → PDF persistido.
-  const rx = await request<any>('/encounters/'+visit.id+'/prescriptions',token,'POST',{
-    operationId: randomUUID(),
+  const rxOperationId = randomUUID();
+  const rxPayload = {
+    operationId: rxOperationId,
     medication:{name:'Medicamento Fictício 10 mg', form:'tablet'},
     dose:{value:10, unit:'mg'},
     route:'oral', frequency:'8/8h', duration:'5 dias',
     times:['08:00','16:00'], quantity:10,
     indication:'Indicação fictícia para verificação automatizada',
     instructions:'Sem uso real; dados sintéticos.'
-  },201);
+  };
+  const rx = await request<any>('/encounters/'+visit.id+'/prescriptions',token,'POST',rxPayload,201);
   assert.ok(Array.isArray(rx.safetyAlerts),'prescrição devolve safetyAlerts tipados');
+
+  // 1b) Replay de operationId (J1 #9): o MESMO operationId devolve a MESMA
+  //     prescrição — sem duplicar documento nem linha na lista.
+  const rxReplay = await request<any>('/encounters/'+visit.id+'/prescriptions',token,'POST',rxPayload,201);
+  assert.equal(rxReplay.id,rx.id,'replay do operationId devolve a mesma prescrição');
   const rxList = await request<any[]>('/patients/'+patient.id+'/prescriptions',token);
   assert.ok(rxList.some((p:any)=>p.id===rx.id),'lista de prescrições do paciente contém o rascunho');
-  const rxSigned = await request<any>('/prescriptions/'+rx.id+'/sign',token,'POST',{operationId:randomUUID()},201);
+  assert.equal(rxList.filter((p:any)=>p.id===rx.id).length,1,'replay não duplicou documento na lista');
+  const rxOperationReuse = await request<any>('/encounters/'+visit.id+'/prescriptions',token,'POST',
+    {...rxPayload, indication:'Outra indicação com a mesma chave'},201);
+  assert.equal(rxOperationReuse.id,rx.id,'mesma chave na mesma operação continua sendo replay');
+  // A MESMA chave usada em OUTRA operação (outro atendimento) é conflito — não replay.
+  const visit2 = await request<Id>('/encounters',token,'POST',{patientId:patient.id,specialty:'general',type:'consultation',reasonForVisit:'Atendimento sintético 2'},201);
+  const crossOp = await request<any>('/encounters/'+visit2.id+'/prescriptions',token,'POST',rxPayload,409);
+  assert.ok(String((crossOp as any)?.message||'').length>0,'reuso da chave em outra operação é conflito');
+
+  const signOperationId = randomUUID();
+  const rxSigned = await request<any>('/prescriptions/'+rx.id+'/sign',token,'POST',{operationId:signOperationId},201);
   assert.equal(rxSigned.signature_status,'attested','atestação ≠ assinatura qualificada');
+  // Replay do sign: mesma resposta, mesmo documento — e a fila de documentos não cresce.
+  const rxSignedReplay = await request<any>('/prescriptions/'+rx.id+'/sign',token,'POST',{operationId:signOperationId},201);
+  assert.equal(rxSignedReplay.document.id,rxSigned.document.id,'replay do sign devolve o mesmo documento');
+  assert.equal(rxSignedReplay.signature_status,'attested');
+  // Documento único: uma nova tentativa de assinar (chave nova) falha sem duplicar.
+  await request('/prescriptions/'+rx.id+'/sign',token,'POST',{operationId:randomUUID()},409);
   const pdfRes = await fetch(new URL('/prescriptions/'+rx.id+'/pdf',apiBase),{headers:{authorization:'Bearer '+token}});
   assert.equal(pdfRes.status,200,'PDF persistido é servido');
   const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());

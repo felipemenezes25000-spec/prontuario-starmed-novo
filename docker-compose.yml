@@ -9,10 +9,9 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
-      - ./database/002_unique_login.sql:/docker-entrypoint-initdb.d/002_unique_login.sql:ro
-      - ./database/003_clinical_extensions.sql:/docker-entrypoint-initdb.d/003_clinical_extensions.sql:ro
-      - ./database/004_patient_history.sql:/docker-entrypoint-initdb.d/004_patient_history.sql:ro
+      # O schema NÃO é aplicado via initdb: a única fonte de verdade é o runner
+      # versionado `npm run migrate` (database/schema.sql + 002..014, com
+      # checksums em schema_migrations). Assim banco local e CI convergem.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U starmed -d starmed"]
       interval: 5s

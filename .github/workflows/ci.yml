@@ -6,9 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   api:
-    name: API — testes e build
+    name: API — testes, build e smoke
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -25,27 +28,65 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
+      # Credenciais EXCLUSIVAMENTE sintéticas e exclusivas do CI.
+      # Nunca reutilizar estas variáveis fora desta execução.
       DATABASE_URL: postgres://starmed:starmed_ci@127.0.0.1:5432/starmed_test
-      AUTH_SECRET: ci-only-secret-not-for-production-0123456789
+      AUTH_SECRET: ci-only-secret-0123456789abcdef0123456789abcdef0123
+      AUTH_ISSUER: starmed-ci
+      AUTH_AUDIENCE: starmed-api-ci
+      WEB_ORIGIN: http://localhost:5173
+      API_PORT: "3001"
+      STARMED_TEST_DB: "true"
+      BOOTSTRAP_ORGANIZATION: StarMed CI
+      BOOTSTRAP_ADMIN_EMAIL: ci-admin@starmed.invalid
+      BOOTSTRAP_ADMIN_PASSWORD: Ci-Only-Admin-P4ssw0rd-2026
+      STARMED_SMOKE_ADMIN_EMAIL: ci-admin@starmed.invalid
+      STARMED_SMOKE_ADMIN_PASSWORD: Ci-Only-Admin-P4ssw0rd-2026
+      STARMED_SMOKE_API_URL: http://127.0.0.1:3001
     defaults:
       run:
-        working-directory: .
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Instalar dependências
-        run: npm install --no-audit --no-fund
+      - name: Instalar dependências (reproduzível, lockfile)
+        run: npm ci
       - name: Testes de domínio (API)
         run: npm test
-      - name: Build (API + Web)
+      - name: Typecheck e build (API + Web)
         run: npm run build
-      - name: Smoke em banco descartável
-        run: npm run smoke
-        env:
-          STARMED_TEST_DB: "true"
+      - name: Schema e migrações versionadas (fail-closed)
+        run: npm run migrate -w @starmed/api
+      - name: Bootstrap de organização e admin sintéticos
+        run: npm run bootstrap -w @starmed/api
+      - name: Iniciar API em banco descartável e aguardar /health
+        run: |
+          set -euo pipefail
+          nohup npm run start -w @starmed/api > /tmp/api.log 2>&1 &
+          api_pid=$!
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3001/health >/dev/null 2>&1; then
+              echo "API saudável após ${i} tentativa(s)"
+              break
+            fi
+            if ! kill -0 "$api_pid" 2>/dev/null; then
+              echo "API encerrou antes de responder /health"
+              cat /tmp/api.log
+              exit 1
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3001/health
+      - name: Smoke — CRUD, notas imutáveis, FHIR, agenda, tenant
+        run: npm run smoke -w @starmed/api
+      - name: Smoke — MFA TOTP, step-up e recuperação
+        run: npm run smoke:mfa -w @starmed/api
+      - name: Logs da API (diagnóstico, sempre)
+        if: always()
+        run: cat /tmp/api.log 2>/dev/null || true
 
   web:
     name: Web — typecheck e bundle
@@ -56,18 +97,70 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install --no-audit --no-fund
+      - run: npm ci
       - name: Build web
         run: npm run build -w @starmed/web
+
+  sca:
+    name: SCA — dependências vulneráveis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Política: vulnerabilidade CRÍTICA bloqueia o merge (fail-closed).
+      # Altas são emitidas como relatório para triagem com dono e data.
+      - name: npm audit (bloqueia críticas)
+        run: npm audit --audit-level=critical
+      - name: Gerar SBOM CycloneDX e inventário de dependências
+        run: node scripts/security/generate-sbom.mjs
+      - name: Publicar SBOM (evidência vinculada ao run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: artifacts/security/
+          if-no-files-found: error
+
+  interop:
+    name: Interop — TISS XSD (ANS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Gerar lote TISS sintético (dados fictícios)
+        run: npx tsx scripts/tiss/ci-fixture.ts tiss-ci.xml
+      - name: Validar contra tissV4_01_00.xsd (deve passar)
+        run: pwsh scripts/tiss/validate-tiss.ps1 -Xml tiss-ci.xml
+      - name: Prova de gate — XML corrompido deve ser REJEITADO
+        shell: pwsh
+        run: |
+          $xml = Get-Content tiss-ci.xml -Raw
+          $xml = $xml -replace '<tiss:tipoTransacao>[^<]+</tiss:tipoTransacao>', ''
+          Set-Content -Path tiss-ci-invalid.xml -Value $xml -Encoding utf8
+          pwsh scripts/tiss/validate-tiss.ps1 -Xml tiss-ci-invalid.xml
+          if ($LASTEXITCODE -eq 0) { Write-Error 'O validador aceitou um XML inválido — gate inoperante'; exit 1 }
+          Write-Output 'Gate negativo OK: XML inválido foi rejeitado pelo XSD da ANS.'
 
   security:
     name: Gitleaks — varredura de segredos
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
+      security-events: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Gate real: sem continue-on-error. Um segredo no histórico derruba o job.
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true

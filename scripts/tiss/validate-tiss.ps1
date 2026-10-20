@@ -11,7 +11,8 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not $SchemaDir) {
   $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-  $SchemaDir = Join-Path $scriptDir '..\..\schemas\tiss\4.01.00'
+  # Segmentos separados (não '..\..\') para valer também em Linux/macOS — o CI roda em ubuntu-latest.
+  $SchemaDir = Join-Path $scriptDir '..' '..' 'schemas' 'tiss' '4.01.00'
 }
 
 # Resolver local-only: resolve os <include>/<import> dos XSDs apenas por nome de arquivo

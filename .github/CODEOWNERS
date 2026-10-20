@@ -1,0 +1,21 @@
+# P0-02 — CODEOWNERS: revisão humana obrigatória nos domínios de risco.
+# Exigir pelo menos 1 aprovação de @felipemenezes25000-spec em PRs que tocam
+# estes caminhos (configurar no ruleset/rule "Require a Pull Request").
+* @felipemenezes25000-spec
+
+# Segurança, identidade e autorização
+/apps/api/src/security.ts @felipemenezes25000-spec
+/apps/api/src/auth-mfa.ts @felipemenezes25000-spec
+/apps/api/src/sso.ts @felipemenezes25000-spec
+/apps/api/src/totp.ts @felipemenezes25000-spec
+
+# Assinatura digital e PKI
+/apps/api/src/signature.ts @felipemenezes25000-spec
+/apps/api/src/pki/ @felipemenezes25000-spec
+/certs/ @felipemenezes25000-spec
+
+# Banco de dados e isolamento multi-tenant
+/database/ @felipemenezes25000-spec
+
+# Cadeia de entrega
+/.github/ @felipemenezes25000-spec

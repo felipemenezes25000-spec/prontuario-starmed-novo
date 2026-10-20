@@ -4,13 +4,16 @@ Descreva o problema, a hipótese/objetivo técnico e o que mudou.
 
 ## Evidência de engenharia
 
-- [ ] Build/testes relevantes executados
+- [ ] Build/testes relevantes executados (se NÃO executados, declarar aqui como "não validado" — nunca como "passou")
+- [ ] Nenhum teste/gate foi removido, desabilitado ou marcado `continue-on-error` para obter status verde
 - [ ] Migrations são idempotentes quando aplicável
 - [ ] Alterações de persistência/auditoria preservam append-only quando exigido
 - [ ] Não foram adicionados PHI/PII, segredos ou credenciais ao repositório/logs
 - [ ] Documentação foi atualizada quando o comportamento mudou
+- [ ] Nenhum texto/UI passou a declarar "assinatura válida", homologação ou certificação sem evidência correspondente
+- [ ] Mudança clínica (prescrição, dose, alerta, fluxo assistencial) recebeu revisão de profissional habilitado
 
-## RenoveJá Intelligence
+## IA clínica (StarMed)
 
 Preencher quando o PR tocar `Intelligence`, evidências, Gates, shadow, modelos, risco ou superfícies clínicas:
 

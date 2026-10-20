@@ -17,6 +17,16 @@ export const OIDS = {
   PADES_AD_RT: '2.16.76.1.7.1.12.1.3'
 } as const;
 
+/** OIDs PKIX (RFC 5280/6960) usados na verificação de revogação dos certificados. */
+export const PKIX_OIDS = {
+  /** Authority Information Access — extensão do certificado que publica o endpoint OCSP */
+  AUTHORITY_INFO_ACCESS: '1.3.6.1.5.5.7.1.1',
+  /** id-ad-ocsp — endpoint do responder OCSP dentro do AIA */
+  AD_OCSP: '1.3.6.1.5.5.7.48.1.1',
+  /** id-pkix-ocsp-nonce — nonce do pedido/resposta OCSP (anti-replay) */
+  OCSP_NONCE: '1.3.6.1.5.5.7.48.1.2'
+} as const;
+
 export const CMS_ATTR = {
   CONTENT_TYPE: '1.2.840.113549.1.9.3',
   MESSAGE_DIGEST: '1.2.840.113549.1.9.4',

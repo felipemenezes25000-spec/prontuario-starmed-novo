@@ -224,6 +224,28 @@ org em toda query, papéis por recurso) já era sólido; fechado `requestId` em 
 `audit_events`. Nota: 7 de 12 subagentes morreram sem editar nada (ler a lição em
 LIÇÕES DE OPERAÇÃO).
 
+**SEGUNDA RODADA (mesmo dia, após o push autorizado) — prioridades do usuário
+executadas e PROVADAS no CI (runs 39473520447 → 39482803902):**
+
+1. `65a09b3`+`146442b` **RLS REAL (ST-P0-005)**: migração `018` — cobertura total por
+   scan de `org_id`, modelo em dois níveis (dado clínico estrito + credencial/
+   capabilidade pré-auth), `FORCE` no dado, papel `starmed_app` NÃO-owner; contexto
+   transacional `starmed.org_id` via `AsyncLocalStorage` (módulo `context.ts` — o
+   ciclo db↔security derrubava o guard, o CI pegou); **a API no CI roda como
+   `starmed_app`** e o **drill cross-tenant prova o isolamento ponta a ponta**.
+2. `3d48460`+`384b36a` **VÍNCULO DE CUIDADO + BREAK-GLASS (J1 #13)**: `020` adiciona
+   `patients.created_by`; `requireCareContext` exige encontro/agendamento/cadastro OU
+   `X-Break-Glass-Reason` ≥20 auditado — porta em paciente detalhe, alergias,
+   problemas, encontros, notas e FHIR (403 sem os dois; 404 continua para cross-tenant).
+3. `e834044` **UI DE PRESCRIÇÃO**: `pages/Prescriptions.tsx` — rascunho estruturado,
+   alertas com override auditado, assinar/cancelar com status honesto.
+4. `31a93c4`+`0fcc3eb` **PAdES DA PRESCRIÇÃO + OCSP**: `019` persiste os BYTES do PDF
+   (antes só o sha256 ficava — artefato assinável perdido!); `GET /:id/pdf` com
+   re-hash honesto; `POST /:id/sign-pades` (cadeia fechada, ACT com falha explícita,
+   CMS em `document_signatures`, corrida→409); OCSP `REVOCATION_MODE=off|soft|hard`
+   (padrão off; hard bloqueia revoked/unknown); UI de download+certificado.
+   **ByteRange (embarque no PDF) segue PENDENTE e está declarado em toda resposta.**
+
 **ABERTO (próximos passos, ordem de risco):**
 - CI: verde em 3 execuções consecutivas (feito); próximo passo é ampliar o smoke
   (tenant duplo, auditoria readback, fixture de assinatura) e manter todo push sob gate.

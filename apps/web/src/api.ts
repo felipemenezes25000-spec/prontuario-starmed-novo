@@ -17,7 +17,10 @@ export type Appointment={id:string;patient_name:string;scheduled_at:string;durat
 
 const base=(import.meta.env.VITE_API_URL||'http://localhost:3001').replace(/\/$/,'');
 export class ApiError extends Error{
-  constructor(public status:number,message:string){super(message);}
+  /** body = corpo JSON bruto da resposta (opcional): preserva `issues` da validação
+   *  (domain.parse → 400 {message, issues:[{path,message}]}) e `alerts` da segurança
+   *  medicamentosa (409/422 em POST /prescriptions/:id/sign), que a mensagem sozinha descarta. */
+  constructor(public status:number,message:string,public body?:unknown){super(message);}
 }
 export async function api<T>(path:string,token:string|null,method='GET',body?:unknown):Promise<T>{
   const response=await fetch(base+path,{
@@ -31,7 +34,7 @@ export async function api<T>(path:string,token:string|null,method='GET',body?:un
   // com aviso. Chamadas públicas (login, verify/recovery MFA, sso) não têm token e,
   // por isso, um 401 delas é erro de credencial/desafio tratado localmente na tela.
   if(response.status===401&&token)window.dispatchEvent(new Event(EVENT_SESSION_EXPIRED));
-  if(!response.ok)throw new ApiError(response.status,typeof data?.message==='string'?data.message:JSON.stringify(data?.message||'Falha na API'));
+  if(!response.ok)throw new ApiError(response.status,typeof data?.message==='string'?data.message:JSON.stringify(data?.message||'Falha na API'),data??undefined);
   return data as T;
 }
 

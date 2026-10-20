@@ -57,3 +57,27 @@
 /* Área do paciente (portal): linha de consentimento quebra em telas estreitas */
 .portal-consent{flex-wrap:wrap}
 .portal-consent-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
+
+/* P1/ST-P1-004 — Jornada de prescrição na UI de equipe: alertas de segurança
+   com níveis visualmente distintos (bloqueio/revisão/informativo) e formulário. */
+.rx-alert{border-radius:11px;border:1px solid;border-left-width:4px;border-left-style:solid;padding:12px 14px;margin:10px 0}
+.rx-alert.block{background:#fdf3f2;border-color:#eec4bd;border-left-color:#b23a2c}
+.rx-alert.review_required{background:#fffaf0;border-color:#f0dcb4;border-left-color:#c7901f}
+.rx-alert.info{background:#f2faf9;border-color:#cfe9e5;border-left-color:#159d8b}
+.rx-alert-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.rx-alert-icon{flex-shrink:0}
+.rx-alert.block .rx-alert-icon{color:#b23a2c}.rx-alert.review_required .rx-alert-icon{color:#c7901f}.rx-alert.info .rx-alert-icon{color:#159d8b}
+.rx-alert-badge{font-size:10px;font-weight:800;letter-spacing:.08em;padding:3px 7px;border-radius:5px;color:#fff;background:#5b7885}
+.rx-alert.block .rx-alert-badge{background:#b23a2c}.rx-alert.review_required .rx-alert-badge{background:#c7901f}.rx-alert.info .rx-alert-badge{background:#159d8b}
+.rx-alert p{margin:4px 0 0;font-size:12px;line-height:1.6;color:#3a5560}
+.rx-alert .rx-alert-strong{font-weight:700;color:#25404d}
+.rx-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+.rx-grid .rx-span{grid-column:1/-1}
+.rx-times{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.rx-time-slot{display:flex;align-items:center;gap:4px;background:#f7fafb;border:1px solid #e3edf0;border-radius:9px;padding:4px 6px}
+.rx-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px 16px;margin:0}
+.rx-fields dt{font-size:10px;letter-spacing:.08em;font-weight:800;color:#819aa4;text-transform:uppercase}
+.rx-fields dd{margin:3px 0 0;font-size:12px;color:#2c4a57;overflow-wrap:anywhere}
+.rx-hash{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10px;color:#5b7885;overflow-wrap:anywhere}
+.rx-sign-status{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#17806f;background:#effaf7;border:1px solid #d3ede6;border-radius:9px;padding:9px 12px;margin:10px 0 0}
+@media(max-width:720px){.rx-grid{grid-template-columns:1fr}}

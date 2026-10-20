@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, HeartPulse, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
+import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, HeartPulse, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Pill, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
 import { api, ApiError, EVENT_SESSION_EXPIRED, type LoginResponse, type Session, type User, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
 import { TeleconsultPage, HospitalPage, TemplatesPage, MetricsPage, LgpdPage } from './pages/Fronts';
 import { SecurityPage } from './pages/Security';
+import { PrescriptionsPage } from './pages/Prescriptions';
 import { PatientPortalPage } from './pages/PatientPortal';
 
-type View='dashboard'|'patients'|'record'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd'|'security';
+type View='dashboard'|'patients'|'record'|'prescriptions'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd'|'security';
 type Banner={text:string;kind:'success'|'error'|'info'};
 type Draft={expectedVersion:number;operationId:string;templateId:string;sections:Record<string,string>};
 const mkId=()=>crypto.randomUUID();
@@ -164,6 +165,7 @@ function Nav({view,onView,role}:{view:View;onView:(v:View)=>void;role:string}){
     {key:'dashboard',label:'Visão geral',icon:LayoutDashboard,allowed:true},
     {key:'patients',label:'Pacientes',icon:Users,allowed:true},
     {key:'record',label:'Prontuário',icon:ClipboardList,allowed:role==='doctor'||role==='nurse'},
+    {key:'prescriptions',label:'Prescrições',icon:Pill,allowed:role==='doctor'||role==='admin'},
     {key:'agenda',label:'Agenda',icon:CalendarDays,allowed:true},
     {key:'assistant',label:'Assistente de IA',icon:Sparkles,allowed:role==='doctor'},
     {key:'teleconsult',label:'Teleconsulta',icon:Video,allowed:role==='doctor'||role==='nurse'||role==='admin'},
@@ -298,6 +300,13 @@ export default function App(){
       setNote(current);setSections(current?.content?.sections??{});setAddenda(history);
       setAddendumReason('');setAddendumContent('');
     } catch(err){alert((err as Error).message,'error');}
+  }
+  /** Seleciona o paciente para a tela de Prescrições SEM abandonar a view atual.
+   *  Médico/enfermagem carregam o prontuário completo (openPatient); o admin não tem
+   *  acesso aos endpoints de encontro/alergias, então só contextualiza o paciente. */
+  async function selectPatientForPrescriptions(p:Patient){
+    if(user?.role==='admin'){setPatient(p);setEncounter(null);setNote(null);setAddenda([]);setSections({});setEncounters([]);setAllergies([]);setProblems([]);return;}
+    await openPatient(p);setView('prescriptions');
   }
   async function createPatient(e:FormEvent){
     e.preventDefault();if(!token||!session)return;
@@ -434,7 +443,7 @@ export default function App(){
     </aside>
     <div className="workspace">
       <header className="topbar">
-        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD',security:'Segurança'} as const)[view]}</strong></div>
+        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',prescriptions:'Prescrições',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD',security:'Segurança'} as const)[view]}</strong></div>
         <div className="topbar-right"><span className={'status-dot '+(serverReady?'':'offline')}/>{serverReady?'API disponível':'API indisponível'} <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="content">
@@ -464,6 +473,7 @@ export default function App(){
           <><div className="patient-header"><div className="patient-avatar large">{patient.fullName.slice(0,1).toUpperCase()}</div><div><span className="eyebrow">PACIENTE EM ATENDIMENTO</span><h2>{patient.fullName}</h2><p>Nascimento: {String(patient.birthDate).slice(0,10)}</p></div><span className="small-pill">ID {patient.id.slice(0,8)}</span></div>
           <div className="record-grid"><div className="stack gap-5"><div className="panel"><div className="panel-title"><h2>Atendimentos</h2><span className="small-pill">{encounters.length}</span></div>
             {encounters.length===0?<p className="muted">Nenhum atendimento para este paciente.</p>:encounters.map(e=><button className={'encounter-row '+(encounter?.id===e.id?'selected':'')} onClick={()=>void openEncounter(e)} key={e.id}><div className="list-icon"><FilePenLine size={18}/></div><div><strong>{specialties[e.specialty as Specialty]?.name||e.specialty}</strong><small>{fmt(e.started_at)}</small></div><ArrowRight size={16}/></button>)}
+            {(isDoctor||user?.role==='admin')&&patient&&<button type="button" className="text-button" onClick={()=>setView('prescriptions')}><Pill size={15}/> Prescrições do paciente</button>}
           </div>
           <div className="panel">
             <div className="panel-title"><h2>Resumo clínico</h2><ShieldCheck size={19}/></div>
@@ -561,6 +571,7 @@ export default function App(){
         {view==='metrics'&&<MetricsPage session={session!} alert={alert}/>}
         {view==='lgpd'&&<LgpdPage session={session!} patients={patients} alert={alert}/>}
         {view==='security'&&<SecurityPage session={session!} alert={alert} onMfaDisabled={()=>endSession('Verificação em duas etapas desativada. Entre novamente para continuar.')}/>}
+        {view==='prescriptions'&&<PrescriptionsPage session={session!} alert={alert} patient={patient} encounter={encounter} patients={patients} onSelectPatient={p=>void selectPatientForPrescriptions(p)} onView={setView}/>}
       </main>
       <footer className="footer"><div><span className="status-dot"/> StarMed MVP • Ambiente não homologado</div><div className="offline-actions"><LockKeyhole size={15}/><input aria-label="Frase-senha offline" type="password" placeholder="Frase-senha offline (mín. 12)" value={passphrase} onChange={e=>setPassphrase(e.target.value)}/><button onClick={()=>void syncNow()} disabled={loading||!pending||passphrase.length<12}><CloudUpload size={15}/> Sincronizar {pending? '('+pending+')':''}</button></div></footer>
     </div>

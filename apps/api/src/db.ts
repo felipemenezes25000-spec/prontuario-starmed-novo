@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { env } from './config';
-import { requestContext } from './security';
+import { requestContext } from './context';
 
 /**
  * Camada de acesso com contexto de tenant transacional (P0-05/ST-P0-005).

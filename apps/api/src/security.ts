@@ -1,34 +1,17 @@
 import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, scrypt as rawScrypt, timingSafeEqual } from 'node:crypto';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { promisify } from 'node:util';
 import { SignJWT, jwtVerify } from 'jose';
 import { Db } from './db';
 import { env } from './config';
+import { requestContext, setOrgContext } from './context';
+
+// Reexporta o contexto para os call sites existentes (guard, audit, portal,
+// teleconsult, MFA...). O módulo de verdade é ./context (sem ciclo com db).
+export { requestContext, setOrgContext };
 
 const scrypt = promisify(rawScrypt);
-
-/**
- * Contexto por requisição (P0-05/C5): o requestId é gerado no middleware
- * (main.ts) e anexado a CADA evento de auditoria, permitindo correlacionar
- * logs, respostas e trilha sem passar o pedido por todos os call sites.
- * `orgId` é o contexto de tenant: o JwtGuard (ou o fluxo de sessão do portal)
- * publica a organização aqui, e o Db passa `starmed.org_id` (SET LOCAL) para
- * que as policies de RLS leiam o tenant correto em cada query.
- */
-export const requestContext = new AsyncLocalStorage<{ requestId: string; orgId?: string }>();
-
-/**
- * Publica o contexto de tenant da requisição atual. Primeiro valor vence (o
- * contexto da sessão autenticada manda); chamado pelo guard, por
- * `audit()` (que sempre conhece o ator) e pelos fluxos pré-autenticação que
- * resolvem o tenant a partir de um segredo (convite, código de verificação).
- */
-export function setOrgContext(orgId: string | null | undefined): void {
-  const store = requestContext.getStore();
-  if (store && !store.orgId && orgId) store.orgId = orgId;
-}
 
 export type Actor = { id:string; org_id:string; role:'admin'|'doctor'|'nurse'|'reception'; email:string; auth_version:number };
 export const IS_PUBLIC_KEY = 'starmed:isPublic';

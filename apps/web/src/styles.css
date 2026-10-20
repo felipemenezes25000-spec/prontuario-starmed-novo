@@ -53,3 +53,7 @@
 .recovery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:9px;list-style:none;padding:0;margin:14px 0 0}
 .recovery-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;font-weight:700;letter-spacing:.06em;text-align:center;background:#fff;border:1px dashed #dfc68a;border-radius:8px;padding:9px 6px;color:#5b4415;overflow-wrap:anywhere}
 @media(max-width:720px){.mfa-modes{flex-direction:column}.recovery-grid{grid-template-columns:repeat(2,1fr)}}
+
+/* Área do paciente (portal): linha de consentimento quebra em telas estreitas */
+.portal-consent{flex-wrap:wrap}
+.portal-consent-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}

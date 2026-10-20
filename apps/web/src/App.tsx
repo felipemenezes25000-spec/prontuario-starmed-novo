@@ -5,6 +5,7 @@ import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
 import { TeleconsultPage, HospitalPage, TemplatesPage, MetricsPage, LgpdPage } from './pages/Fronts';
 import { SecurityPage } from './pages/Security';
+import { PatientPortalPage } from './pages/PatientPortal';
 
 type View='dashboard'|'patients'|'record'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd'|'security';
 type Banner={text:string;kind:'success'|'error'|'info'};
@@ -38,7 +39,7 @@ function ssoErrorText(e:unknown){
   }
   return 'Não foi possível conectar ao StarMed. Verifique sua conexão e tente novamente.';
 }
-function Access({onLogin,notice}:{onLogin:(session:Session)=>void;notice?:string}){
+function Access({onLogin,notice,onPatientPortal}:{onLogin:(session:Session)=>void;notice?:string;onPatientPortal?:()=>void}){
   const [email,setEmail]=useState(''),[password,setPassword]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const [stage,setStage]=useState<'credentials'|'mfa'>('credentials');
@@ -133,7 +134,10 @@ function Access({onLogin,notice}:{onLogin:(session:Session)=>void;notice?:string
           <button disabled={busy} className="primary-button" type="submit">{busy?'Autenticando…':'Entrar no sistema'} <ArrowRight size={18}/></button>
         </form>
         <div className="sso-divider"><span>ou</span></div>
-        <button type="button" className="sso-button" disabled={busy} onClick={()=>void startSso()}><Building2 size={17}/> Entrar com acesso corporativo (SSO)</button>
+        <div className="stack gap-3">
+          <button type="button" className="sso-button" disabled={busy} onClick={()=>void startSso()}><Building2 size={17}/> Entrar com acesso corporativo (SSO)</button>
+          {onPatientPortal&&<button type="button" className="sso-button" disabled={busy} onClick={onPatientPortal}><HeartPulse size={17}/> Área do paciente</button>}
+        </div>
       </>:<>
         <h2>Confirme sua identidade</h2>
         <p>{mfaMode==='totp'?'Informe o código de 6 dígitos do seu aplicativo autenticador.':'Use um dos códigos de recuperação que você salvou ao ativar o MFA.'}</p>
@@ -209,6 +213,8 @@ export default function App(){
   const [serverReady,setServerReady]=useState(false);
   // Aviso amigável exibido na tela de login (sessão encerrada, MFA desativado…)
   const [accessNotice,setAccessNotice]=useState('');
+  // Entrada sem sessão staff: 'portal' abre a área do paciente (sessão própria, segregada da clínica).
+  const [entryScreen,setEntryScreen]=useState<'staff'|'portal'>('staff');
   const token=session?.accessToken??null;
   const user=session?.user;
   const isDoctor=user?.role==='doctor';
@@ -412,7 +418,10 @@ export default function App(){
       setAiResult(response.suggestion);alert('Sugestão recebida. Revise todos os campos antes de registrar.','info');
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
   }
-  if(!session)return <Access onLogin={startSession} notice={accessNotice||undefined}/>;
+  // Área do paciente: rota/view SEM sessão staff — sessão própria em PatientPortalPage.
+  if(!session)return entryScreen==='portal'
+    ? <PatientPortalPage onBack={()=>setEntryScreen('staff')}/>
+    : <Access onLogin={startSession} notice={accessNotice||undefined} onPatientPortal={()=>setEntryScreen('portal')}/>;
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand-row"><IconMark/><span>StarMed</span></div>

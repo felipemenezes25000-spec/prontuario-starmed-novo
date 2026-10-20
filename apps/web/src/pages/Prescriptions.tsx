@@ -1,20 +1,27 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { AlertCircle, AlertTriangle, ArrowRight, Ban, CloudUpload, FileSignature, FileText, Info, Pill, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
-import { api, ApiError, type Encounter, type Patient, type Session } from '../api';
+import { AlertCircle, AlertTriangle, ArrowRight, Ban, CloudUpload, Download, FileSignature, FileText, Info, KeyRound, Pill, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { api, ApiError, EVENT_SESSION_EXPIRED, type Encounter, type Patient, type Session } from '../api';
 
 /**
  * P1/ST-P1-004 (parte web) — JORNADA DE PRESCRIÇÃO na UI de equipe, integrada aos
- * controllers que já existem em apps/api/src/prescriptions.ts (nenhuma mudança de API):
+ * controllers de apps/api/src/prescriptions.ts (adições C6: download do PDF e
+ * assinatura PAdES; os demais endpoints permanecem iguais):
  *   GET  /patients/:patientId/prescriptions          → histórico do paciente atual
  *   GET  /encounters/:encounterId/prescriptions      → prescrições do encontro aberto
  *   POST /encounters/:encounterId/prescriptions      → rascunho {operationId,...} → linha + safetyAlerts
  *   PATCH /prescriptions/:id                         → edição de rascunho (schema STRICT: sem operationId)
  *   POST /prescriptions/:id/sign                     → {operationId, overrideJustification?} — SOMENTE doctor
+ *   GET  /prescriptions/:id/pdf                      → PDF persistido como BLOB com Bearer (doctor/nurse;
+ *                                                      nunca link público; o servidor re-confere o SHA-256)
+ *   POST /prescriptions/:id/sign-pades               → PAdES/ICP-Brasil sobre os bytes do PDF (SOMENTE doctor;
+ *                                                      exige prescrição atestada 'signed'; CMS detached — o
+ *                                                      embarque ByteRange no PDF segue pendente)
  *   POST /prescriptions/:id/cancel                   → {reason} (mín. 8), admin/doctor, nunca apaga
  * safetyAlerts: info | review_required | block — review exige overrideJustification (mín. 20)
  * digitado na tela; block impede a assinatura NO SERVIDOR (422, sem override possível).
  * HONESTIDADE: signature_status 'attested' é exibido como "Atestada (PDF com SHA-256) —
- * assinatura PAdES pendente"; o sistema NUNCA afirma "assinatura válida".
+ * assinatura PAdES pendente"; 'pades' como evidência registrada com qualificação
+ * TRI-ESTADO (qualified|not_qualified|unknown) — o sistema NUNCA afirma "assinatura válida".
  * 401: o helper api() já dispara EVENT_SESSION_EXPIRED e o App volta ao login — não duplicamos.
  * Prescrição pertence ao encontro: sem encontro utilizável, exibimos orientação (não um formulário morto).
  */
@@ -40,6 +47,17 @@ type SignResult={
   document?:{id:string;storage_key:string;sha256:string;created_at:string};
   document_sha256?:string;payload_sha256?:string;signature_note?:string;safetyAlerts?:SafetyAlert[];
 };
+/** Resposta de POST /prescriptions/:id/sign-pades (qualificação tri-estado + revogação). */
+type PadesResult={
+  prescriptionId:string;signatureId:string;documentType:string;contentDigest:string;
+  policyOid:string;timestampAuthority:string|null;signatureIsQualified:boolean|null;
+  qualification:'qualified'|'not_qualified'|'unknown';
+  signer:{id:string;councilNumber:string;councilState:string};
+  revocation:{checked:boolean;status:string|null;source:string|null;checkedAt:string|null;mode:string;reason?:string;note?:string;revokedAt?:string|null};
+  padesEmbedding:{embedded:boolean;reason:string};
+  note?:string;createdAt:string;
+};
+type PadesForm={cert:string;chain:string;key:string;crm:string;uf:string;requireTimestamp:boolean};
 type DraftForm={
   medName:string;medCode:string;medForm:string;concentration:string;
   doseValue:string;doseUnit:string;route:string;frequency:string;duration:string;
@@ -48,6 +66,8 @@ type DraftForm={
 
 const NETWORK='Não foi possível conectar ao StarMed. Tente novamente.';
 const errText=(e:unknown)=>e instanceof ApiError?e.message:NETWORK;
+/** Base da API (espelha api.ts): usada só para o download BLOB do PDF. */
+const apiBase=(import.meta.env.VITE_API_URL||'http://localhost:3001').replace(/\/$/,'');
 const HHMM=/^([01]\d|2[0-3]):[0-5]\d$/;
 const MED_FORMS:{value:MedicationForm;label:string}[]=[
   {value:'tablet',label:'Comprimido'},{value:'capsule',label:'Cápsula'},{value:'solution',label:'Solução'},
@@ -65,6 +85,23 @@ function signatureLabel(s:string){
   if(s==='attested')return 'Atestada (PDF com SHA-256) — assinatura PAdES pendente';
   if(s==='pades')return 'PAdES registrada no registro da prescrição';
   return 'Sem assinatura digital registrada';
+}
+/** Rótulos honestos TRI-ESTADO — nunca "assinatura válida". */
+const qualificationLabel=(q:'qualified'|'not_qualified'|'unknown')=>
+  q==='qualified'?'Qualificada (carimbo de tempo + OIDs ITI no CMS)'
+  :q==='not_qualified'?'Não qualificada (sem carimbo de tempo — ex.: AD-RB)'
+  :'Qualificação indeterminada na emissão';
+function revocationLabel(r:PadesResult['revocation']){
+  if(r.status==='good')return `Não revogado (OCSP good${r.source?` via ${r.source}`:''})`;
+  if(r.status==='revoked')return `REVOGADO (OCSP${r.revokedAt?` em ${r.revokedAt}`:''})`;
+  if(r.status==='unknown')return 'Status OCSP desconhecido para o certificado';
+  if(r.status==='unavailable')return `OCSP indisponível${r.reason?` — ${r.reason}`:''}`;
+  return r.reason||'OCSP não consultado';
+}
+/** Extrai blocos PEM de certificado de um texto colado (certificado + cadeia). */
+function pemsOf(text:string):string[]{
+  const matches=text.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g);
+  return matches?matches:[];
 }
 const encounterStatus=(s:string)=>s==='in-progress'?'Em atendimento':s==='planned'?'Planejado':s==='finished'?'Concluído':s==='cancelled'?'Cancelado':s;
 const encounterType=(t:string)=>t==='consultation'?'Consulta':t==='follow_up'?'Retorno':t==='teleconsultation'?'Teleconsulta':t==='emergency'?'Urgência':t;
@@ -217,6 +254,7 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
   const role=session.user.role;
   const canDraft=role==='doctor'||role==='admin';
   const canSign=role==='doctor';
+  const canDownload=role==='doctor'||role==='nurse';
 
   const [patientList,setPatientList]=useState<Prescription[]>([]);
   const [encounterList,setEncounterList]=useState<Prescription[]>([]);
@@ -238,6 +276,13 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
   const [cancelId,setCancelId]=useState<string|null>(null);
   const [cancelReason,setCancelReason]=useState('');
   const [cancelBusy,setCancelBusy]=useState(false);
+  const [downloadingId,setDownloadingId]=useState<string|null>(null);
+  const [padesId,setPadesId]=useState<string|null>(null);
+  const [padesForm,setPadesForm]=useState<PadesForm>({cert:'',chain:'',key:'',crm:'',uf:'',requireTimestamp:false});
+  const [padesBusy,setPadesBusy]=useState(false);
+  const [padesResult,setPadesResult]=useState<PadesResult|null>(null);
+  const [padesError,setPadesError]=useState('');
+  const [padesFieldErrors,setPadesFieldErrors]=useState<Record<string,string>>({});
 
   async function load(){
     if(!patient){setPatientList([]);setEncounterList([]);return;}
@@ -257,6 +302,8 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
     setAlerts([]);setAlertsRxId(null);setOverride('');setSignResult(null);
     setCancelId(null);setCancelReason('');setErrors({});setSavedNote('');
     setForm(emptyForm());setEditingId(null);
+    setPadesId(null);setPadesResult(null);setPadesError('');setPadesFieldErrors({});
+    setPadesForm({cert:'',chain:'',key:'',crm:'',uf:'',requireTimestamp:false});
   },[patient?.id]);
 
   const err=(k:string)=>errors[k]?<InlineError text={errors[k]}/>:null;
@@ -347,6 +394,78 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
     }finally{setSigningId(null);}
   }
 
+  /** Download do PDF persistido: BLOB com Bearer (nunca link público). Erros são
+   *  honestos: 404 = sem artefato persistido; 500 = documento corrompido (hash divergente). */
+  async function downloadPdf(rx:Prescription){
+    if(downloadingId)return;
+    setDownloadingId(rx.id);
+    try{
+      const response=await fetch(apiBase+'/prescriptions/'+rx.id+'/pdf',{
+        method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token}
+      });
+      if(response.status===401){window.dispatchEvent(new Event(EVENT_SESSION_EXPIRED));return;}
+      if(!response.ok){
+        const data:unknown=await response.json().catch(()=>null);
+        const message=data&&typeof data==='object'&&typeof (data as {message?:unknown}).message==='string'
+          ?(data as {message:string}).message:'Falha ao baixar o PDF da prescrição.';
+        alert(message,'error');return;
+      }
+      const blob=await response.blob();
+      const url=URL.createObjectURL(blob);
+      const anchor=document.createElement('a');
+      anchor.href=url;anchor.download='prescricao-'+rx.id.slice(0,8)+'.pdf';
+      document.body.appendChild(anchor);anchor.click();anchor.remove();
+      URL.revokeObjectURL(url);
+    }catch{alert(NETWORK,'error');}
+    finally{setDownloadingId(null);}
+  }
+
+  function openPades(rx:Prescription){
+    setPadesId(padesId===rx.id?null:rx.id);
+    setPadesResult(null);setPadesError('');setPadesFieldErrors({});
+  }
+
+  async function submitPades(e:FormEvent){
+    e.preventDefault();
+    if(!padesId||padesBusy)return;
+    const client:Record<string,string>={};
+    const pems=pemsOf(padesForm.cert);
+    if(pems.length!==1)client.cert='Cole exatamente UM certificado do signatário em PEM (begin/end CERTIFICATE).';
+    if(padesForm.chain.trim()&&pemsOf(padesForm.chain).length===0)client.chain='Cadeia em PEM inválida: cole blocos -----BEGIN CERTIFICATE----- / -----END CERTIFICATE----- ou deixe vazio.';
+    if(!/-----BEGIN (ENCRYPTED |)?PRIVATE KEY-----/.test(padesForm.key))client.key='Cole a chave privada em PEM (PKCS#8, -----BEGIN PRIVATE KEY-----).';
+    if(!/^[0-9]{4,6}$/.test(padesForm.crm.trim()))client.crm='CRM deve ter 4 a 6 dígitos.';
+    if(!/^[A-Z]{2}$/.test(padesForm.uf.trim().toUpperCase()))client.uf='UF deve ser a sigla de 2 letras (ex.: SP).';
+    setPadesFieldErrors(client);
+    if(Object.keys(client).length){alert('Corrija os campos do certificado antes de assinar.','error');return;}
+    setPadesBusy(true);setPadesError('');
+    try{
+      const chainPems=pemsOf(padesForm.chain);
+      const r=await api<PadesResult>('/prescriptions/'+padesId+'/sign-pades',token,'POST',{
+        signerCertPem:pems[0],
+        chainPems,
+        privateKeyPkcs8Pem:padesForm.key.trim(),
+        councilNumber:padesForm.crm.trim(),
+        councilState:padesForm.uf.trim().toUpperCase(),
+        requireTimestamp:padesForm.requireTimestamp
+      });
+      setPadesResult(r);setPadesId(null);
+      alert('PAdES registrada para a prescrição. '+(r.note||''),'success');
+      await load();
+    }catch(err2){
+      const message=errText(err2);
+      const status=err2 instanceof ApiError?err2.status:null;
+      const hint=status===400?' (recusa do servidor: certificado/cadeia/LPA/ACT)'
+        :status===409?' (conflito: prescrição não atestada ou já assinada com PAdES)'
+        :status===403?' (permissão: somente médico ativo — ou certificado bloqueado por REVOCATION_MODE=hard)'
+        :status===404?' (prescrição ou PDF não encontrado)'
+        :status===500?' (documento corrompido ou erro interno — veja o motivo do servidor)'
+        :status===502||status===503?' (autoridade de carimbo de tempo indisponível/recusou)'
+        :'';
+      setPadesError(message+hint);
+      alert(message,'error');
+    }finally{setPadesBusy(false);}
+  }
+
   async function submitCancel(e:FormEvent){
     e.preventDefault();
     if(!cancelId)return;
@@ -424,8 +543,72 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
               {canSign&&rx.status==='draft'&&<button type="button" className="primary-button" disabled={signingId!==null||blocked(rx.id)} onClick={()=>void sign(rx)}>
                 <ShieldCheck size={16}/> {signingId===rx.id?'Assinando…':needsOverride(rx.id)?'Assinar com justificativa':'Assinar'}</button>}
               {canDraft&&rx.status==='draft'&&<button type="button" className="secondary-button" onClick={()=>startEdit(rx)}><FileSignature size={15}/> Editar rascunho</button>}
+              {canDownload&&rx.status==='signed'&&<button type="button" className="secondary-button" disabled={downloadingId===rx.id} onClick={()=>void downloadPdf(rx)}>
+                <Download size={15}/> {downloadingId===rx.id?'Baixando…':'Baixar PDF'}</button>}
+              {canSign&&rx.status==='signed'&&rx.signature_status!=='pades'&&<button type="button" className="secondary-button" onClick={()=>openPades(rx)}>
+                <KeyRound size={15}/> {padesId===rx.id?'Fechar certificado':'Assinar com certificado ICP-Brasil…'}</button>}
               {canDraft&&rx.status!=='cancelled'&&cancelId!==rx.id&&<button type="button" className="secondary-button" onClick={()=>{setCancelId(rx.id);setCancelReason('');setErrors(p=>({...p,_cancel:''}));}}><Ban size={15}/> Cancelar…</button>}
             </div>
+            {padesId===rx.id&&<form className="stack gap-3" onSubmit={submitPades}>
+              <p className="muted footnote">Assinatura PAdES/ICP-Brasil sobre os <strong>bytes do PDF persistido</strong> (a prescrição já está atestada). A chave privada é usada <strong>em memória no servidor e nunca armazenada</strong> — para produção, prefira custódia em KMS/HSM. O CMS sai como evidência detached: o embarque da assinatura no PDF (ByteRange) segue pendente.</p>
+              <label>Certificado do signatário (e-CPF) em PEM <span className="required"> *</span>
+                <textarea rows={3} value={padesForm.cert} onChange={e=>setPadesForm(f=>({...f,cert:e.target.value}))}
+                  aria-invalid={!!padesFieldErrors.cert}
+                  placeholder={'-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----'}/>
+                {padesFieldErrors.cert&&<InlineError text={padesFieldErrors.cert}/>}
+              </label>
+              <label>Cadeia de certificação (intermediárias em PEM, opcional)
+                <textarea rows={2} value={padesForm.chain} onChange={e=>setPadesForm(f=>({...f,chain:e.target.value}))}
+                  aria-invalid={!!padesFieldErrors.chain}
+                  placeholder="Cole os blocos PEM das intermediárias, se o e-CPF não as incluir."/>
+                {padesFieldErrors.chain&&<InlineError text={padesFieldErrors.chain}/>}
+              </label>
+              <label>Chave privada PKCS#8 (PEM) <span className="required"> *</span>
+                <textarea rows={3} value={padesForm.key} onChange={e=>setPadesForm(f=>({...f,key:e.target.value}))}
+                  aria-invalid={!!padesFieldErrors.key}
+                  placeholder={'-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----'}/>
+                {padesFieldErrors.key&&<InlineError text={padesFieldErrors.key}/>}
+                <small className="muted">Usada em memória pelo servidor e descartada — não é persistida em lugar algum.</small>
+              </label>
+              <div className="rx-grid">
+                <label>CRM (4 a 6 dígitos) <span className="required"> *</span>
+                  <input value={padesForm.crm} maxLength={6} inputMode="numeric" onChange={e=>setPadesForm(f=>({...f,crm:e.target.value}))}
+                    aria-invalid={!!padesFieldErrors.crm} placeholder="Ex.: 123456"/>
+                  {padesFieldErrors.crm&&<InlineError text={padesFieldErrors.crm}/>}
+                </label>
+                <label>UF do conselho <span className="required"> *</span>
+                  <input value={padesForm.uf} maxLength={2} onChange={e=>setPadesForm(f=>({...f,uf:e.target.value.toUpperCase()}))}
+                    aria-invalid={!!padesFieldErrors.uf} placeholder="Ex.: SP"/>
+                  {padesFieldErrors.uf&&<InlineError text={padesFieldErrors.uf}/>}
+                </label>
+              </div>
+              <label style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                <input type="checkbox" checked={padesForm.requireTimestamp} onChange={e=>setPadesForm(f=>({...f,requireTimestamp:e.target.checked}))}/>
+                Exigir carimbo de tempo (ACT/AD-RT) — sem ACT configurada (TSA_URL) o servidor recusa com 400; falha da ACT aborta a emissão.
+              </label>
+              {padesError&&<InlineError text={padesError}/>}
+              <div className="action-row">
+                <button type="button" className="secondary-button" onClick={()=>setPadesId(null)}>Voltar</button>
+                <button type="submit" className="primary-button" disabled={padesBusy}>
+                  <KeyRound size={16}/> {padesBusy?'Assinando PAdES…':'Assinar PDF com certificado ICP-Brasil'}</button>
+              </div>
+            </form>}
+            {padesResult&&padesResult.prescriptionId===rx.id&&<div className="panel">
+              <div className="panel-title"><h2>Evidência PAdES da prescrição</h2>
+                <button type="button" className="text-button" onClick={()=>setPadesResult(null)}><X size={14}/> Fechar</button></div>
+              <div className="rx-sign-status"><ShieldCheck size={15}/> {qualificationLabel(padesResult.qualification)}</div>
+              <dl className="rx-fields">
+                <div><dt>Assinatura ID</dt><dd>{padesResult.signatureId.slice(0,8)}</dd></div>
+                <div><dt>SHA-256 do PDF assinado</dt><dd className="rx-hash">{padesResult.contentDigest}</dd></div>
+                <div><dt>Política (LPA)</dt><dd>{padesResult.policyOid}</dd></div>
+                <div><dt>Carimbo de tempo</dt><dd>{padesResult.timestampAuthority||'sem carimbo (AD-RB)'}</dd></div>
+                <div><dt>CRM/UF do signatário</dt><dd>{padesResult.signer.councilNumber}/{padesResult.signer.councilState}</dd></div>
+                <div><dt>Revogação (OCSP)</dt><dd>{revocationLabel(padesResult.revocation)}</dd></div>
+                <div><dt>Emitida em</dt><dd>{fmt(padesResult.createdAt)}</dd></div>
+              </dl>
+              <p className="muted footnote">{padesResult.padesEmbedding.reason}</p>
+              <p className="muted footnote">{padesResult.note||'Evidência PAdES registrada. O sistema não afirma "assinatura válida": a validação oficial é a do verificador do ITI.'}</p>
+            </div>}
             {cancelId===rx.id&&<form className="stack gap-3" onSubmit={submitCancel}>
               <label>Motivo do cancelamento <span className="required"> *</span> — mínimo de 8 caracteres; o registro é preservado com rastro.
                 <textarea rows={2} required minLength={8} maxLength={1000} value={cancelReason} onChange={e=>setCancelReason(e.target.value)}
@@ -476,8 +659,8 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
             {signResult.document_sha256&&<div><dt>SHA-256 do PDF</dt><dd className="rx-hash">{signResult.document_sha256}</dd></div>}
             {signResult.payload_sha256&&<div><dt>SHA-256 do conteúdo</dt><dd className="rx-hash">{signResult.payload_sha256}</dd></div>}
           </dl>
-          <p className="muted footnote">{signResult.signature_note||'Documento emitido e hasheado (atestado). Assinatura digital PAdES pendente de integração — não constitui assinatura qualificada.'}</p>
-          <p className="muted footnote">O sistema não afirma "assinatura válida": a assinatura qualificada (PAdES/ICP-Brasil) está pendente de integração.</p>
+          <p className="muted footnote">{signResult.signature_note||'Documento emitido, persistido (bytes + SHA-256) e hasheado (atestado). A assinatura PAdES/ICP-Brasil é uma etapa separada: enquanto for "Atestada", não constitui assinatura qualificada.'}</p>
+          <p className="muted footnote">O sistema não afirma "assinatura válida": a assinatura PAdES qualificada é a etapa "Assinar com certificado ICP-Brasil" (e a validação oficial é a do verificador do ITI).</p>
         </div>}
 
         {!encUsable?<div className="panel empty-state">

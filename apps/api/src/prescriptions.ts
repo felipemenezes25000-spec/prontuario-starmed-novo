@@ -1,18 +1,36 @@
-import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Req, UnprocessableEntityException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { Body, BadRequestException, ConflictException, Controller, ForbiddenException, Get, HttpException, InternalServerErrorException, NotFoundException, Param, Patch, Post, Req, Res, UnprocessableEntityException } from '@nestjs/common';
+import { X509Certificate, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
 import { Actor, audit, QueryRunner, requireRole } from './security';
+import { loadPolicy } from './pki/policy';
+import { signPades } from './pki/pades';
+import { requestTimestamp, tsaConfigFromEnv, TsaError } from './pki/tsa';
+import { TrustStore, TrustStoreError } from './pki/trust-store';
+import { validateChain } from './pki/chain';
+import { OIDS, documentTypeOid } from './pki/iti-oids';
+import { checkRevocation, revocationModeFromEnv } from './pki/revocation';
+import { qualifySignature, tsaCategoryToHttpStatus } from './signature';
 
 /** Fluxo de prescrição eletrônica: rascunho estruturado, segurança medicamentosa
  * (alergias registradas + duplicidade terapêutica), assinatura restrita a médico
- * ATIVO com idempotência (operationId) e PDF A4 próprio gravado em clinical_documents.
- * PENDÊNCIA HONESTA: a assinatura PAdES do PDF (signature.ts/pki) não é integrada
- * aqui — enquanto a emissão de certificado/carimbo não existir para prescrições,
- * o status fica 'attested' (documento emitido e hasheado) e NUNCA "assinatura válida". */
+ * ATIVO com idempotência (operationId) e PDF A4 próprio gravado EM ÍNTEGRA em
+ * clinical_documents.content (bytes + sha256; migração 019).
+ * Etapas de assinatura (C6/J1 #8-#10):
+ *   1) POST /:id/sign      — atestação (signature_status='attested'): PDF emitido,
+ *      persistido e hasheado; NUNCA "assinatura qualificada";
+ *   2) POST /:id/sign-pades — PAdES/ICP-Brasil sobre OS BYTES DO PDF persistidos,
+ *      cadeia validada fechada contra o trust store, OCSP opcional (REVOCATION_MODE
+ *      =off|soft|hard, padrão off), ACT opcional (requireTimestamp), CMS persistido
+ *      em document_signatures (prescription_id) e signature_status='pades'.
+ * PENDÊNCIA HONESTA: o CMS sai DETACHED — o embarque PAdES no PDF (ByteRange)
+ * segue pendente (pki/pades.ts não o implementa); a validação usa a evidência
+ * armazenada ao lado do PDF, e a validação oficial continua sendo a do ITI. */
 
 type ReqWithActor = { actor: Actor };
+/** Subset estrutural da resposta Express usada no stream do PDF (padrão de sso.ts). */
+type PdfHttpResponse = { setHeader(name: string, value: string | number): unknown; end(chunk?: unknown): unknown };
 
 // ---------------------------------------------------------------------------
 // Schemas (zod) — campos estruturados obrigatórios; dose sem unidade ou rota
@@ -60,6 +78,17 @@ const signPrescriptionSchema = z.object({
   overrideJustification: z.string().trim().min(20).max(2000).optional()
 }).strict();
 const cancelPrescriptionSchema = z.object({ reason: z.string().trim().min(8).max(1000) }).strict();
+// Contrato do PAdES da prescrição: espelha signPadesRequestSchema de signature.ts
+// (certificado/chave só em memória, nunca persistida) SEM expectedVersion/documentType:
+// o documento é a prescrição :id e o tipo é sempre 'prescription' (OID do Cap. V).
+const signPadesPrescriptionSchema = z.object({
+  signerCertPem: z.string().trim().min(64, 'signerCertPem ausente ou truncado'),
+  chainPems: z.array(z.string().trim().min(64)).max(10).default([]),
+  privateKeyPkcs8Pem: z.string().trim().min(64, 'privateKeyPkcs8Pem ausente ou truncado'),
+  councilNumber: z.string().regex(/^[0-9]{4,6}$/, 'councilNumber deve ter 4 a 6 dígitos'),
+  councilState: z.string().regex(/^[A-Z]{2}$/, 'councilState deve ser uma UF (duas letras maiúsculas)'),
+  requireTimestamp: z.boolean().default(false)
+}).strict();
 
 const PRESCRIPTION_COLUMNS =
   'p.id,p.encounter_id,p.prescriber_id,p.medication_code,p.medication_name,p.dose,p.dose_value,p.dose_unit,p.medication_form,' +
@@ -225,8 +254,9 @@ export function buildPrescriptionPdf(input: PrescriptionPdfInput): Buffer {
   push('Registro profissional (CRM/UF): pendência - não cadastrado no sistema.');
   push(`Emitido em: ${input.signedAt}`);
   push(`Identificador SHA-256 dos dados: ${input.payloadSha256}`);
-  push('Status do documento: ATESTADO - PDF gerado e hasheado no servidor.', 11);
-  push('Assinatura digital PAdES (ICP-Brasil): PENDENTE de integração - este documento NÃO constitui assinatura qualificada.', 10);
+  push('Status na emissão: ATESTADO - PDF gerado, persistido e hasheado no servidor.', 11);
+  push('Assinatura digital PAdES (ICP-Brasil): registrada em etapa SEPARADA no servidor (evidência CMS).', 10);
+  push('Esta folha NÃO embute a assinatura (embarque ByteRange pendente) e, isolada, NÃO constitui assinatura qualificada.', 10);
 
   const pages: PdfLine[][] = [];
   for (let i = 0; i < lines.length; i += LINES_PER_PAGE) pages.push(lines.slice(i, i + LINES_PER_PAGE));
@@ -284,6 +314,27 @@ async function computeSafetyAlerts(db: QueryRunner, orgId: string, patientId: st
       WHERE p.org_id=$1 AND e.patient_id=$2 AND p.status='signed' AND p.id<>$3 LIMIT 100`,
     [orgId, patientId, excludePrescriptionId ?? '00000000-0000-0000-0000-000000000000']);
   return evaluatePrescriptionSafety({ medicationName, allergies: allergies.rows, activePrescriptions: active.rows });
+}
+
+/** PDF persistido da prescrição com re-hash honesto (usado por GET :id/pdf e
+ *  POST :id/sign-pades): content ausente → 404 declarando a ausência do artefato;
+ *  hash divergente → 500 "documento corrompido" — bytes suspeitos NUNCA são
+ *  servidos nem assinados (J1 #10 começa aqui: a assinatura cobre exatamente
+ *  estes bytes). */
+async function loadSignedPrescriptionPdf(db: QueryRunner, signedDocumentId: string | null, orgId: string): Promise<Buffer> {
+  if (!signedDocumentId)
+    throw new NotFoundException('PDF ainda não existe: o documento é emitido no ato da assinatura da prescrição.');
+  const r = await db.query(
+    'SELECT sha256, content FROM clinical_documents WHERE id=$1 AND org_id=$2', [signedDocumentId, orgId]);
+  if (!r.rowCount) throw new NotFoundException('Documento da prescrição não encontrado.');
+  const row = r.rows[0];
+  if (row.content === null || row.content === undefined)
+    throw new NotFoundException('PDF não disponível: o documento desta prescrição não tem conteúdo persistido (emitido antes da migração 019_prescription_pades).');
+  const content = Buffer.from(row.content);
+  const digest = createHash('sha256').update(content).digest('hex');
+  if (digest !== row.sha256)
+    throw new InternalServerErrorException('Documento corrompido: o SHA-256 do conteúdo persistido diverge do hash registrado — o PDF não será servido nem assinado.');
+  return content;
 }
 
 @Controller('encounters/:encounterId/prescriptions')
@@ -482,10 +533,14 @@ export class PrescriptionsController {
       });
       const pdfSha256 = createHash('sha256').update(pdf).digest('hex');
       const storageKey = `prescriptions/${actor.org_id}/${id}.pdf`;
+      // Persistimos os BYTES do PDF junto do hash (migração 019): sem o conteúdo
+      // o artefato assinável se perdia — só o sha256 ficava. INSERT novo é coerente
+      // porque a prescrição nasce 'signed' uma única vez (replay de operationId
+      // devolve a resposta original antes deste ponto, sem duplicar documento).
       const document = await c.query<any>(
-        `INSERT INTO clinical_documents(org_id,patient_id,encounter_id,doc_type,storage_key,mime_type,sha256,created_by)
-         VALUES($1,$2,$3,'prescription',$4,'application/pdf',$5,$6) RETURNING id,storage_key,mime_type,sha256,created_at`,
-        [actor.org_id, row.patient_id, row.encounter_id, storageKey, pdfSha256, actor.id]);
+        `INSERT INTO clinical_documents(org_id,patient_id,encounter_id,doc_type,storage_key,mime_type,sha256,content,created_by)
+         VALUES($1,$2,$3,'prescription',$4,'application/pdf',$5,$6,$7) RETURNING id,storage_key,mime_type,sha256,created_at`,
+        [actor.org_id, row.patient_id, row.encounter_id, storageKey, pdfSha256, pdf, actor.id]);
       const signed = await c.query<any>(
         `UPDATE prescriptions SET status='signed',signed_by=$3,signed_at=now(),signed_document_id=$4,
            signature_status='attested',override_justification=COALESCE($5,override_justification),updated_at=now()
@@ -500,7 +555,7 @@ export class PrescriptionsController {
         document_sha256: pdfSha256,
         payload_sha256: payloadHash,
         safetyAlerts: alerts,
-        signature_note: 'Documento emitido e hasheado (atestado). Assinatura digital PAdES pendente de integração — não constitui assinatura qualificada.'
+        signature_note: 'Documento emitido, persistido (bytes + SHA-256) e hasheado (atestado). A assinatura PAdES/ICP-Brasil é uma etapa SEPARADA (POST /prescriptions/:id/sign-pades): enquanto signature_status="attested", este documento NÃO constitui assinatura qualificada.'
       };
       await c.query('INSERT INTO idempotency_keys(org_id,key,operation,response) VALUES($1,$2,$3,$4)',
         [actor.org_id, body.operationId, 'prescription.sign:' + id, JSON.stringify(response)]);
@@ -527,6 +582,203 @@ export class PrescriptionsController {
         [id, actor.org_id, body.reason, actor.id]);
       await audit(c, actor, 'prescription.cancelled', 'prescription', id, { reason: body.reason, wasSigned });
       return { id, status: 'cancelled', wasSigned };
+    });
+  }
+
+  /** Download do PDF persistido (doctor/nurse): os bytes são re-hasheados contra
+   *  o sha256 registrado ANTES de sair; falha honesta (404 sem artefato, 500
+   *  corrompido). Nunca link público — sempre via Bearer na sessão. */
+  @Get(':id/pdf')
+  async downloadPdf(@Req() req: ReqWithActor, @Param('id') rawId: string, @Res() res: PdfHttpResponse) {
+    const actor = req.actor;
+    requireRole(actor, ['doctor', 'nurse']);
+    const id = parse(uuid, rawId);
+    const loaded = await this.db.query<any>(
+      `SELECT p.signed_document_id, e.patient_id
+         FROM prescriptions p
+         JOIN encounters e ON e.id = p.encounter_id AND e.org_id = p.org_id
+        WHERE p.id = $1 AND p.org_id = $2`, [id, actor.org_id]);
+    if (!loaded.rowCount) throw new NotFoundException('Prescrição não encontrada');
+    try {
+      const content = await loadSignedPrescriptionPdf(this.db, loaded.rows[0].signed_document_id, actor.org_id);
+      await audit(this.db, actor, 'prescription.pdf.read', 'prescription', id,
+        { documentId: loaded.rows[0].signed_document_id, patientId: loaded.rows[0].patient_id,
+          sha256: createHash('sha256').update(content).digest('hex') });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="prescricao-${id}.pdf"`);
+      res.setHeader('Content-Length', String(content.length));
+      return res.end(content);
+    } catch (e) {
+      // Tentativa de download também é auditoria quando falha (artefato ausente/corrompido).
+      await audit(this.db, actor, 'prescription.pdf.failed', 'prescription', id,
+        { reason: e instanceof HttpException ? e.message : 'erro interno ao ler o documento' });
+      throw e;
+    }
+  }
+
+  /** Emissao PAdES/ICP-Brasil (AD-RT com carimbo, ou AD-RB) sobre a prescrição
+   *  JÁ ATESTADA, assinando OS BYTES DO PDF persistidos (J1 #10: o CMS cobre
+   *  exatamente estes bytes; alterar 1 byte do PDF invalida a verificação).
+   *  Espelha notes/sign-pades (signature.ts): cadeia FECHADA no trust store
+   *  (J1 #8), OCSP opcional por REVOCATION_MODE=off|soft|hard, ACT opcional com
+   *  falha explícita (nunca AD-RB silencioso sob requireTimestamp).
+   *  LIMITAÇÃO HONESTA: pki/pades.ts emite CMS DETACHED — o embarque PAdES no
+   *  PDF (ByteRange) segue pendente; a evidência vive em document_signatures. */
+  @Post(':id/sign-pades')
+  async signPadesPrescription(@Req() req: ReqWithActor, @Param('id') rawId: string, @Body() raw: unknown) {
+    const actor = req.actor;
+    requireRole(actor, ['doctor']);
+    const id = parse(uuid, rawId);
+    const body = parse(signPadesPrescriptionSchema, raw);
+
+    // 1) Pré-condições SEM transação: rede (ACT/OCSP) acontece fora do tx.
+    const me = await this.db.query<any>('SELECT role,active FROM users WHERE id=$1 AND org_id=$2', [actor.id, actor.org_id]);
+    if (!me.rowCount || me.rows[0].role !== 'doctor' || !me.rows[0].active)
+      throw new ForbiddenException('Apenas médicos ativos podem assinar prescrições');
+    const loaded = await this.db.query<any>(
+      `SELECT p.id,p.status,p.signature_status,p.signed_document_id
+         FROM prescriptions p WHERE p.id=$1 AND p.org_id=$2`, [id, actor.org_id]);
+    if (!loaded.rowCount) throw new NotFoundException('Prescrição não encontrada');
+    const row = loaded.rows[0];
+    if (row.status !== 'signed')
+      throw new BadRequestException('Somente prescrições atestadas (status signed) podem receber assinatura PAdES');
+    if (row.signature_status === 'pades')
+      throw new ConflictException('Prescrição já possui assinatura PAdES registrada');
+    const pdf = await loadSignedPrescriptionPdf(this.db, row.signed_document_id, actor.org_id);
+
+    // 2) Cadeia do signer contra o trust store ICP-Brasil: falha FECHADA (J1 #8:
+    //    certificado errado/expirado/fora da cadeia rejeitado, com o motivo real).
+    let trust: TrustStore;
+    try {
+      trust = TrustStore.default();
+    } catch (e) {
+      throw new BadRequestException(e instanceof TrustStoreError ? e.message : 'Certificado fora do trust store ICP-Brasil');
+    }
+    let presented: X509Certificate[];
+    try {
+      presented = [new X509Certificate(body.signerCertPem), ...body.chainPems.map((p) => new X509Certificate(p))];
+    } catch {
+      throw new BadRequestException('Certificado ou cadeia PEM ilegível');
+    }
+    const chain = validateChain(presented[0], presented.slice(1), trust);
+    if (!chain.ok) throw new BadRequestException(`Cadeia de certificação rejeitada (${chain.code}): ${chain.reason}`);
+
+    // 3) Carimbo de tempo: só com requireTimestamp E ACT configurada. A LPA
+    //    (ad-rt/ad-rb) acompanha a decisão e é carregada antes da rede (falha
+    //    de leitura da política não deve custar um round-trip na ACT).
+    const tsa = tsaConfigFromEnv();
+    if (body.requireTimestamp && !tsa)
+      throw new BadRequestException('Carimbo de tempo exigido, mas nenhuma ACT está configurada (TSA_URL)');
+    const wantsTimestamp = Boolean(body.requireTimestamp && tsa);
+    const policy = loadPolicy(wantsTimestamp ? 'ad-rt' : 'ad-rb');
+
+    // 4) Revogação (OCSP): padrão DESLIGADO (REVOCATION_MODE=off, sem rede em CI);
+    //    'hard' bloqueia revoked/unknown; 'soft' apenas reporta.
+    const revocationMode = revocationModeFromEnv();
+    const issuer = chain.path.length > 1 ? chain.path[1]
+      : presented[0].subject === presented[0].issuer ? presented[0] : null;
+    const revocation = await checkRevocation({ leaf: presented[0], issuer, mode: revocationMode });
+    if (revocationMode === 'hard' && (revocation.status === 'revoked' || revocation.status === 'unknown'))
+      throw new ForbiddenException({
+        message: `Assinatura bloqueada (REVOCATION_MODE=hard): status de revogação "${revocation.status}" do certificado do signatário.`,
+        revocation
+      });
+
+    // 5) Carimbo de tempo (ACT): falha com requireTimestamp ABORTA a emissão
+    //    (TsaError → status honesto), nunca cai para AD-RB silenciosamente.
+    let timestampTokenDer: Buffer | null = null;
+    if (wantsTimestamp && tsa) {
+      const imprint = createHash('sha256').update(pdf).digest();
+      try {
+        const tst = await requestTimestamp({ imprint }, tsa);
+        timestampTokenDer = tst.tokenDer;
+      } catch (e) {
+        if (e instanceof TsaError)
+          throw new HttpException(`Falha no carimbo de tempo (ACT): ${e.message}`, tsaCategoryToHttpStatus(e.category));
+        throw e;
+      }
+    }
+
+    // 6) Assinatura CMS/PAdES sobre os bytes do PDF (chave privada só em memória,
+    //    nunca persistida — KMS/HSM é a evolução declarada do MVP).
+    const signed = await signPades({
+      content: pdf,
+      signerCertPem: body.signerCertPem,
+      chainPems: body.chainPems,
+      privateKeyPkcs8Pem: body.privateKeyPkcs8Pem,
+      documentType: 'prescription',
+      councilNumber: body.councilNumber,
+      councilState: body.councilState,
+      policy,
+      timestampTokenDer
+    });
+    const contentDigest = signed.digestSha256.toString('hex');
+    const hasItiOids = documentTypeOid('prescription').startsWith(OIDS.POLICY_ARC + '.');
+    // qualified=true SÓ se o carimbo entrou no CMS (tri-estado — nunca "assinatura válida").
+    const signatureIsQualified = qualifySignature(signed.timestampApplied, hasItiOids);
+    const timestampAuthority = signed.timestampApplied ? (tsa?.url ?? null) : null;
+
+    // 7) Persistência em UMA transação: trava a prescrição (pode ter sido
+    //    cancelada durante a rede), grava a evidência (note_id NULL,
+    //    prescription_id preenchido, document_type='prescription') e transiciona
+    //    attested → pades. Corrida de re-assinatura colide no índice único 019.
+    return this.db.tx(async c => {
+      const locked = await c.query<any>(
+        'SELECT p.status,p.signature_status FROM prescriptions p WHERE p.id=$1 AND p.org_id=$2 FOR UPDATE OF p',
+        [id, actor.org_id]);
+      if (!locked.rowCount) throw new NotFoundException('Prescrição não encontrada');
+      if (locked.rows[0].status !== 'signed')
+        throw new ConflictException('Prescrição deixou de estar atestada durante a assinatura PAdES');
+      if (locked.rows[0].signature_status === 'pades')
+        throw new ConflictException('Prescrição já possui assinatura PAdES registrada');
+      let record: { id: string; created_at: Date };
+      try {
+        const inserted = await c.query<any>(
+          `INSERT INTO document_signatures(org_id,note_id,prescription_id,signer_user_id,cms,content_digest,document_type,
+             council_number,council_state,policy_oid,timestamp_authority,signature_is_qualified,signature_path)
+           VALUES($1,NULL,$2,$3,$4,$5,'prescription',$6,$7,$8,$9,$10,$11) RETURNING id, created_at`,
+          [actor.org_id, id, actor.id, signed.cms, contentDigest, body.councilNumber, body.councilState,
+           signed.policyOid, timestampAuthority, signatureIsQualified,
+           JSON.stringify(chain.path.map((p) => ({ subject: p.subject, serialNumber: p.serialNumber, validTo: p.validTo })))]);
+        record = inserted.rows[0];
+      } catch (e: any) {
+        if (e && e.code === '23505') throw new ConflictException('Prescrição já possui assinatura PAdES registrada');
+        throw e;
+      }
+      const transition = await c.query<any>(
+        `UPDATE prescriptions SET signature_status='pades', updated_at=now()
+          WHERE id=$1 AND org_id=$2 AND status='signed' RETURNING id, signature_status`,
+        [id, actor.org_id]);
+      if (!transition.rowCount) throw new ConflictException('Prescrição deixou de estar atestada durante a assinatura PAdES');
+      await audit(c, actor, 'prescription.signed.pades', 'prescription', id, {
+        signatureId: record.id,
+        documentType: 'prescription',
+        contentDigest,
+        policyOid: signed.policyOid,
+        timestampAuthority,
+        signatureIsQualified,
+        councilNumber: body.councilNumber,
+        councilState: body.councilState,
+        revocation
+      });
+      return {
+        prescriptionId: id,
+        signatureId: record.id,
+        documentType: 'prescription',
+        contentDigest,
+        policyOid: signed.policyOid,
+        timestampAuthority,
+        signatureIsQualified,
+        qualification: signatureIsQualified === true ? 'qualified' : signatureIsQualified === false ? 'not_qualified' : 'unknown',
+        signer: { id: actor.id, councilNumber: body.councilNumber, councilState: body.councilState },
+        revocation,
+        padesEmbedding: {
+          embedded: false,
+          reason: 'pki/pades.ts emite CMS DETACHED: o embarque PAdES no PDF (ByteRange) segue PENDENTE — este PDF não carrega a assinatura embutida; a evidência (CMS) vive em document_signatures, ao lado do documento.'
+        },
+        note: 'Evidência PAdES registrada e signature_status="pades". Isto NÃO é "assinatura válida" auto-declarada: a validação oficial (verificador do ITI) continua externa ao StarMed.',
+        createdAt: record.created_at
+      };
     });
   }
 }

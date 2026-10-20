@@ -99,9 +99,9 @@ não declarar "acesso por vínculo" como cumprido.
 | Ameaça | Cenário | Controle atual | Status |
 |---|---|---|---|
 | (S) Spoofing | Apresentar atestação como "assinatura válida" | Separação de status (attested/signed/pades_verified/…) | em implementação (P0-06) |
-| (T) Tampering | PDF alterado 1 byte após assinar | ByteRange + hash + CMS detached na verificação | `mitigado-código` — validação externa no ITI pendente |
-| (E) Elevation | Certificado expirado/revogado errado assina | Rejeição dura de cadeia inválida/expirada/revogada | em implementação (P0-06) |
-| (D) DoS / (I) | TSA indisponível → documento com atributo enganoso | Falha da TSA vira estado explícito `external_block` | em implementação (P0-06) |
+| (T) Tampering | PDF alterado 1 byte após assinar | ByteRange + hash + CMS detached na verificação | `mitigado-código` — prescrições: bytes persistidos + re-hash em cada leitura/assinatura (019); validação externa no ITI pendente |
+| (E) Elevation | Certificado expirado/revogado errado assina | Rejeição dura de cadeia inválida/expirada (prescrição: `sign-pades` novo, cadeia fechada); revogação via OCSP com `REVOCATION_MODE=off|soft|hard` (hard bloqueia revoked/unknown) | `mitigado-código` — OCSP nasce desligado; assinatura da resposta OCSP e nonce pendentes |
+| (D) DoS / (I) | TSA indisponível → documento com atributo enganoso | Falha da ACT vira erro explícito com status HTTP (502/503/500); `requireTimestamp` sem TSA configurada → 400; nunca AD-RB silencioso | `mitigado-código` |
 | — | Validação no validador oficial do ITI | — | `bloqueado-externo` — validar.iti.gov.br + homologação ACT/TSA |
 | (S) Spoofing | Chave privada no backend (PFX/P12) | Proibido como fluxo padrão; assinatura remota/HSM é a direção | `parcial` — migração KMS documentada em `docs/references/CERTIFICATE_KMS_SETUP.md` |
 

@@ -9,12 +9,16 @@ import { TsaFailureCategory, TsaError, requestTimestamp, tsaConfigFromEnv } from
 import { TrustStore, TrustStoreError } from './pki/trust-store';
 import { validateChain } from './pki/chain';
 import { loadPolicy } from './pki/policy';
+import { checkRevocation, revocationModeFromEnv } from './pki/revocation';
 import { DocumentType, OIDS, documentTypeOid } from './pki/iti-oids';
 
 /**
  * Endpoints de assinatura PAdES ICP-Brasil dos documentos clínicos.
  * A infra (signPades/verifyPades/requestTimestamp/TrustStore/loadPolicy/validateChain)
  * mora em src/pki; aqui fica orquestração, persistência da evidência e auditoria.
+ * Revogação: pki/revocation.ts — REVOCATION_MODE=off|soft|hard (padrão off: CI sem
+ * rede); 'soft' só REPORTA o estado OCSP na verificação, 'hard' BLOQUEIA o
+ * sign-pades de prescrições com status 'revoked' ou 'unknown'.
  *
  * Segurança: a chave privada do profissional NUNCA é persistida — chega no request,
  * é usada em memória pelo signPades e descartada. MVP com chaves no request; a
@@ -286,12 +290,14 @@ export class SignatureController {
 
     let chainValid = false;
     let chainReason: string | undefined;
+    let chainPath: X509Certificate[] = [];
     let signer: { subject: string | null; fingerprint: string | null } = { subject: null, fingerprint: null };
     if (verified.signerCert) {
       signer = { subject: verified.signerCert.subject, fingerprint: verified.signerCert.fingerprint256 };
       try {
         const validation = validateChain(verified.signerCert, [], TrustStore.default(), new Date());
         chainValid = validation.ok;
+        chainPath = validation.path; // [leaf, emissor, ...]: fonte do emissor p/ CertID do OCSP
         if (!validation.ok) chainReason = validation.reason;
       } catch (e) {
         chainValid = false;
@@ -312,16 +318,24 @@ export class SignatureController {
       typeof verified.policyOid === 'string' ? verified.policyOid.startsWith(OIDS.POLICY_ARC + '.') : null
     );
 
+    // Revogação: pki/revocation.ts — REVOCATION_MODE=off|soft|hard (padrão off,
+    // CI sem rede). Com o modo ativo o campo carrega o estado real do OCSP
+    // (good|revoked|unknown|unavailable); com off, checked:false + motivo honesto
+    // (NUNCA afirma "não revogado" sem consulta — pendência P0-06 agora opcional).
+    const revocation = await checkRevocation({
+      leaf: verified.signerCert,
+      issuer: chainPath.length > 1 ? chainPath[1]
+        : verified.signerCert && verified.signerCert.subject === verified.signerCert.issuer ? verified.signerCert : null,
+      mode: revocationModeFromEnv()
+    });
+
     return {
       signatureValid: verified.signatureValid,
       chainValid,
       ...(chainReason ? { chainReason } : {}),
       // Tri-estado honesto da qualificação (mesma semântica da emissão).
       qualification: qualification === true ? 'qualified' : qualification === false ? 'not_qualified' : 'unknown',
-      // Honestidade sobre revogação: OCSP/CRL ainda NÃO é consultado — uma
-      // assinatura com certificado posteriormente revogado passaria por este
-      // check. Pendência P0-06 (bloqueio externo: ponto de revogação ICP-Brasil).
-      revocation: { checked: false, reason: 'OCSP/CRL não integrado — pendência declarada' },
+      revocation,
       signer,
       timestampPresent: verified.timestampPresent,
       policyOid: verified.policyOid,

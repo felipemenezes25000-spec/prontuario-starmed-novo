@@ -1,4 +1,4 @@
-# CONTINUAR — estado da sessão (StarMed)
+﻿# CONTINUAR — estado da sessão (StarMed)
 
 Documento de retomada. Uma nova sessão deve ler este arquivo inteiro antes de qualquer
 coisa e continuar da seção "EM ABERTO". Atualize este arquivo a cada marco concluído.
@@ -344,6 +344,12 @@ cd frontend; npx vite --port 5273             # 5173 está ocupada
   blocos curtos** (arquivos pequenos primeiro, grep nos grandes), **lista exata de
   arquivos proibidos** (conflito entre agentes) e **retry** — o agente morto não deixa
   sujeira (git status limpo = não escreveu nada).
+- **Agente tardio reescreve por conta própria**: um agente que voltou após ~1h de
+  estagnação REESCREVEU `pades-embed.ts` contra o briefing antigo, divergindo do
+  contrato já integrado e verde no CI (mudava o tipo que `prescriptions.ts` consome).
+  **Política registrada:** antes de aceitar o relatório de um agente, `git status` +
+  `git diff --stat`; se divergir da versão provada no CI → `git checkout -- <arquivos>`
+  e fica a versão verde (aplicado em 20/10/2026, logo após c9e99d9).
 - `git push` funciona via GitHub CLI (`credential.https://github.com.helper = gh`).
 - Commits relevantes: `c2fdca5` (MVP), `6495811` (integração do legado + fix build).
 - Rode `npm test` + `npm run build` antes de qualquer push e registre o resultado aqui.

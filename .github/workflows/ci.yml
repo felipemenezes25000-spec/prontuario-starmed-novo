@@ -103,6 +103,60 @@ jobs:
         if: always()
         run: cat /tmp/api.log 2>/dev/null || true
 
+  e2e:
+    name: E2E — Playwright (3 jornadas)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: starmed_e2e
+          POSTGRES_USER: starmed
+          POSTGRES_PASSWORD: starmed_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U starmed -d starmed_e2e"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Credenciais EXCLUSIVAMENTE sintéticas e exclusivas deste job.
+      DATABASE_URL: postgres://starmed:starmed_e2e@127.0.0.1:5432/starmed_e2e
+      AUTH_SECRET: ci-e2e-secret-0123456789abcdef0123456789abcdef0123
+      AUTH_ISSUER: starmed-ci
+      AUTH_AUDIENCE: starmed-api-ci
+      STARMED_TEST_DB: "true"
+      BOOTSTRAP_ORGANIZATION: StarMed E2E
+      BOOTSTRAP_ADMIN_EMAIL: e2e-admin@starmed.invalid
+      BOOTSTRAP_ADMIN_PASSWORD: E2e-Only-Admin-P4ssw0rd-2026
+      E2E_ADMIN_EMAIL: e2e-admin@starmed.invalid
+      E2E_ADMIN_PASSWORD: E2e-Only-Admin-P4ssw0rd-2026
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Instalar Chromium do Playwright (+ dependências de sistema)
+        run: npx playwright install --with-deps chromium
+      # O runner faz tudo: CA de teste (trust store injetável → PAdES positivo),
+      # migrações, bootstrap, build, API (:3001), web (:5174) e as 3 jornadas.
+      # Este job não exercita RLS (é papel dono): isolamento é do job `api` + drill.
+      - name: E2E — login+MFA, prescrição PAdES, break-glass
+        run: node scripts/e2e/run-e2e.mjs
+      - name: Artefatos Playwright (diagnóstico de falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e
+          path: test-results/
+          if-no-files-found: ignore
+
   web:
     name: Web — typecheck e bundle
     runs-on: ubuntu-latest

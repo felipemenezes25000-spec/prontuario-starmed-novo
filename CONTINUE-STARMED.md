@@ -1,4 +1,4 @@
-﻿# CONTINUAR — estado da sessão (StarMed)
+# CONTINUAR — estado da sessão (StarMed)
 
 Documento de retomada. Uma nova sessão deve ler este arquivo inteiro antes de qualquer
 coisa e continuar da seção "EM ABERTO". Atualize este arquivo a cada marco concluído.
@@ -176,6 +176,43 @@ provedor OIDC real (config via OIDC_* no .env.example), credencial ACT SERPRO
 (pacote pronto pelo script acima).
 
 ## EM ABERTO (continuar daqui)
+
+### F. RODADA 21/10/2026 — FASE 1 do `PROMPT_DE_CONTINUACAO_V3` (testes executados localmente)
+
+Ordem de leitura desta rodada: `docs/engineering/EXECUCAO_2026-10-21.md` (evidências
+executadas) + `docs/engineering/MATRIZ_TESTES.md` + ADRs `adr/0001` e `adr/0002`.
+
+1. **FLAKY MORTO (F1-a)** — duas causas raiz provadas por fuzz dirigido:
+   (1) serial INTEGER não-mínimo no gerador de teste (OpenSSL 3 recusa; ~1/128 por
+   cert); (2) `pem()` com linha vazia antes de `-----END CERTIFICATE-----` quando o
+   base64 é múltiplo de 64 (OpenSSL/Node rejeita "wrong tag"). Fixes em
+   `pki/test-pki.ts` + novo `pki/pem.ts` (normalização de PEM de usuário em
+   prescriptions/signature/pades/trust-store) + regressões determinísticas.
+   **Evidência: fuzz 0/1000, suíte pki 0/30 execuções (antes ~1/10), 115/115 local.**
+2. **Smoke replay de `operationId` (F1-b)** — criação idêntica, lista sem duplicar,
+   chave cruzada → 409, replay de sign = mesmo documento, sign novo → 409.
+   **EXECUTADO local (smoke ✓ + smoke:mfa ✓).**
+3. **Fixture PAdES positiva (F1-c)** — `scripts/e2e/gen-e2e-ca.ts` gera CA de teste em
+   `.e2e/` (gitignorado) e o E2E sobe a API com `ICP_BRASIL_TRUST_STORE` injetado;
+   cadeia aceita provada localmente. ADR-0002. Positivo com cert ICP real segue EXTERNO.
+4. **E2E Playwright (F1-d)** — `tests/e2e/*` (3 jornadas: login+MFA; prescrição→PAdES→
+   adulteração em 2 camadas; break-glass→auditoria), runner `scripts/e2e/run-e2e.mjs`
+   (fail-fast em porta ocupada + teardown síncrono), job
+   `E2E — Playwright (3 jornadas)` no `ci.yml`. **LOCAL VERDE: 3/3** (5.1s).
+   Descobertas do E2E corrigidas no produto: CORS antes do rate limit (o 429 saía sem
+   header e o browser mascarava como "não foi possível conectar") e preflight OPTIONS
+   fora do orçamento de login (`rate-limit.ts`).
+5. **Achado de segurança corrigido:** `X-Break-Glass-Reason` faltava em
+   `allowedHeaders` do CORS (`main.ts`) — a UI de break-glass não funcionava
+   cross-origin; o smoke (curl) nunca pega isso.
+6. **MATRIZ_TESTES.md (F1-e)** criado; `EXECUCAO_2026-10-21.md` com evidência local.
+
+**Validação local desta rodada:** `npm ci` ✓ · `npm test` 115/115 ✓ · `npm run build` ✓
+· `migrate --dry-run` (20 pendentes) + migração em base limpa ✓ · bootstrap ✓ ·
+smoke ✓ · smoke:mfa ✓ · **E2E Playwright 3/3 ✓** (run limpo, teardown OK).
+
+**Próximo:** push do marco F1 → CI verde (6 jobs) → registrar run
+IDs em `EXECUCAO_2026-10-21.md` → Fase 2 (Prontuário 360°).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

@@ -7,3 +7,12 @@ coverage/
 *.log
 .DS_Store
 .vite/
+# E2E (Playwright) — artefatos gerados; a CA de teste NUNCA entra no repo
+.e2e/
+test-results/
+playwright-report/
+fuzz-out/
+tiss-ci.xml
+tiss-ci-invalid.xml
+# cache incremental do tsc (regenerado a cada build)
+*.tsbuildinfo

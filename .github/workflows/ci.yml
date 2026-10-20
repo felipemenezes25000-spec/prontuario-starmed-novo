@@ -164,3 +164,5 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # O CLI só auto-descobre .gitleaks.toml na raiz; aqui ele está em .github/.
+          GITLEAKS_CONFIG: .github/gitleaks.toml

@@ -68,8 +68,10 @@ export function revocationModeFromEnv(raw: string | undefined = process.env.REVO
 export function ocspEndpointFromCertificate(leaf: X509Certificate): string | null {
   try {
     const certificate = pkijs.Certificate.fromBER(toArrayBuffer(leaf.raw));
-    const aia = (certificate.extensions?.extensions ?? [])
-      .find((extension) => extension.extnID === PKIX_OIDS.AUTHORITY_INFO_ACCESS);
+    // certificate.extensions já É a lista (Extension[]); parsedValue do AIA é
+    // preenchido quando o pkijs reconhece a extensão — sem parse, null honesto.
+    const extensions = certificate.extensions ?? [];
+    const aia = extensions.find((extension) => extension.extnID === PKIX_OIDS.AUTHORITY_INFO_ACCESS);
     if (!aia) return null;
     const info = aia.parsedValue as {
       accessDescriptions?: { accessMethod: string; accessLocation?: { type?: number; value?: unknown } }[];
@@ -151,7 +153,9 @@ export async function checkRevocation(params: {
              reason: 'Falha ao montar o pedido OCSP (CertID): ' + errorMessage(e) };
   }
 
-  const fetchLike: FetchLike = params.fetchLike ?? ((url, init) => fetch(url, init) as never);
+  // O cast do init a RequestInit contorna a incompatibilidade de genérico de
+  // ArrayBuffer (TS 5.7) entre Uint8Array e BodyInit; o shape é estruturalmente o mesmo.
+  const fetchLike: FetchLike = params.fetchLike ?? ((url, init) => fetch(url, init as RequestInit));
   const timeoutMs = params.timeoutMs ?? 5000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

@@ -4,7 +4,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import { PgRateLimitStore, rateLimitMiddleware } from './rate-limit';
 import { ClinicalAddendaController } from './addenda';
 import { AllergiesController, ProblemsController } from './clinical-history';
 import { MfaController, MfaService } from './auth-mfa';
@@ -40,14 +40,20 @@ async function bootstrap(){
   assertSecurityConfig();
   const app=await NestFactory.create(ApiModule,{bodyParser:true});
   app.use(helmet());
-  const limiter=(message:string,limit:number)=>rateLimit({windowMs:15*60*1000,limit,standardHeaders:'draft-7',legacyHeaders:false,message:{message}});
-  app.use('/auth/login',limiter('Excesso de tentativas; tente mais tarde',10));
-  app.use('/auth/mfa/verify',limiter('Excesso de tentativas de MFA; tente mais tarde',10));
-  app.use('/auth/mfa/recovery',limiter('Excesso de tentativas de recuperação; tente mais tarde',10));
-  app.use('/auth/sso/start',limiter('Excesso de inícios de SSO; tente mais tarde',30));
-  app.use('/auth/sso/callback',limiter('Excesso de callbacks SSO; tente mais tarde',30));
+  // Proxy reverso real (produção): TRUST_PROXY=true habilita X-Forwarded-For —
+  // só ative atrás do proxy que sobrescreve o header (senão o IP é forjável).
+  if(process.env.TRUST_PROXY==='true') app.set('trust proxy', 1);
+  // Rate limit DISTRIBUÍDO (P0-07): contador em Postgres (021), compartilhado
+  // entre instâncias — mesmas rotas e mesmos limites de antes, sem segredo novo.
+  const rateLimiter=(route:string,message:string,limit:number,minutes:number)=>
+    rateLimitMiddleware(new PgRateLimitStore(app.get(Db)),route,limit,minutes*60*1000,message);
+  app.use('/auth/login', rateLimiter('auth.login','Excesso de tentativas; tente mais tarde',10,15));
+  app.use('/auth/mfa/verify', rateLimiter('auth.mfa.verify','Excesso de tentativas de MFA; tente mais tarde',10,15));
+  app.use('/auth/mfa/recovery', rateLimiter('auth.mfa.recovery','Excesso de tentativas de recuperação; tente mais tarde',10,15));
+  app.use('/auth/sso/start', rateLimiter('auth.sso.start','Excesso de inícios de SSO; tente mais tarde',30,15));
+  app.use('/auth/sso/callback', rateLimiter('auth.sso.callback','Excesso de callbacks SSO; tente mais tarde',30,15));
   // Rota pública do Guia ITI (VALIDAR): sem limite por IP do validador, mas com teto defensivo.
-  app.use('/verify',limiter('Excesso de consultas de validação; tente mais tarde',120));
+  app.use('/verify', rateLimiter('verify.public','Excesso de consultas de validação; tente mais tarde',120,15));
   app.use((req:any,res:any,next:any)=>{res.setHeader('Cache-Control','no-store'); next();});
   // Request-Id (P0-05/C5): aceita um id saudável do chamador ou gera um; sempre
   // ecoado no header e propagado ao contexto (audit_events.details.requestId).

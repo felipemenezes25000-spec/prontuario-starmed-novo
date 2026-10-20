@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
+import { z } from 'zod';
 import { Db } from './db';
 import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } from './fhir-mappers';
 import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireCareContext, requireRole, requestContext, sessionResponse, verifyPassword } from './security';
@@ -8,10 +9,10 @@ type R = {actor:Actor};
 type RWithHeaders = R & { headers?: Record<string, unknown> };
 const breakGlassOf = (req: RWithHeaders) => req.headers?.['x-break-glass-reason'];
 const a=(r:R)=>r.actor;
-const auditQuery = (c:any, actor:Actor, action:string, type:string, id:string|null) => {
+const auditQuery = (c:any, actor:Actor, action:string, type:string, id:string|null, extra:Record<string,unknown>={}) => {
   const requestId=requestContext.getStore()?.requestId;
   return c.query('INSERT INTO audit_events(org_id,actor_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5,$6)',
-    [actor.org_id,actor.id,action,type,id,JSON.stringify(requestId?{requestId}:{})]);
+    [actor.org_id,actor.id,action,type,id,JSON.stringify({...extra,...(requestId?{requestId}:{})})]);
 };
 
 @Controller('health')
@@ -98,6 +99,24 @@ export class PatientsController {
     return r.rows[0];
   }
 }
+/** Estado e transições da agenda (schema.sql:51 — enum pré-existente). */
+export type AppointmentFlow = 'scheduled'|'checked_in'|'completed'|'cancelled'|'no_show';
+const APPOINTMENT_TRANSITIONS: Record<AppointmentFlow, AppointmentFlow[]> = {
+  scheduled: ['checked_in','cancelled','no_show'],
+  checked_in: ['completed','cancelled'],
+  completed: [],
+  cancelled: [],
+  no_show: []
+};
+export function appointmentTransition(current: AppointmentFlow, next: AppointmentFlow): void {
+  if(!APPOINTMENT_TRANSITIONS[current]?.includes(next))
+    throw new ConflictException(`Transição inválida na agenda: ${current} → ${next}`);
+}
+const appointmentStatusSchema = z.object({
+  status: z.enum(['checked_in','completed','cancelled','no_show']),
+  reason: z.string().trim().min(5).max(500).optional()
+}).strict();
+
 @Controller('appointments')
 export class AppointmentsController {
   constructor(private db:Db){}
@@ -126,6 +145,29 @@ export class AppointmentsController {
       if((error as {code?:string}).code==='23P01')throw new ConflictException('Horário indisponível para este profissional');
       throw error;
     }
+  }
+
+  /** Transição de estado da agenda (ST-P1-011 / D6): check-in, conclusão,
+   *  cancelamento e não-comparência — o enum do schema (schema.sql:51) já
+   *  existia; faltavam os endpoints. Máquina pura, testável sem banco. */
+  @Patch(':id/status')
+  async updateStatus(@Req() req:R,@Param('id') rawId:string,@Body() raw:unknown){
+    const actor=a(req);
+    const id=parse(uuid,rawId);
+    const body=parse(appointmentStatusSchema,raw);
+    // Conclusão é ato clínico (admin/doctor/nurse); check-in/cancel/no-show é
+    // recepção (admin/doctor/reception). Papéis fora da lista → 403.
+    if(body.status==='completed') requireRole(actor,['admin','doctor','nurse']);
+    else requireRole(actor,['admin','doctor','reception']);
+    return this.db.tx(async c=>{
+      const r=await c.query<any>('SELECT status FROM appointments WHERE id=$1 AND org_id=$2 FOR UPDATE',[id,actor.org_id]);
+      if(!r.rowCount)throw new NotFoundException('Agendamento não encontrado');
+      appointmentTransition(r.rows[0].status as AppointmentFlow,body.status);
+      const upd=await c.query<any>('UPDATE appointments SET status=$3 WHERE id=$1 AND org_id=$2 RETURNING id,status,scheduled_at,kind',
+        [id,actor.org_id,body.status]);
+      await auditQuery(c,actor,'appointment.'+body.status,'appointment',id, body.reason?{reason:body.reason}:{});
+      return upd.rows[0];
+    });
   }
 }
 @Controller('encounters')

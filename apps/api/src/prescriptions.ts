@@ -3,7 +3,7 @@ import { X509Certificate, createHash } from 'node:crypto';
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
-import { Actor, audit, QueryRunner, requireRole } from './security';
+import { Actor, audit, QueryRunner, requireCareContext, requireRole } from './security';
 import { loadPolicy } from './pki/policy';
 import { signPades } from './pki/pades';
 import { requestTimestamp, tsaConfigFromEnv, TsaError } from './pki/tsa';
@@ -28,7 +28,8 @@ import { qualifySignature, tsaCategoryToHttpStatus } from './signature';
  * segue pendente (pki/pades.ts não o implementa); a validação usa a evidência
  * armazenada ao lado do PDF, e a validação oficial continua sendo a do ITI. */
 
-type ReqWithActor = { actor: Actor };
+type ReqWithActor = { actor: Actor; headers?: Record<string, unknown> };
+const breakGlassOf = (req: ReqWithActor) => req.headers?.['x-break-glass-reason'];
 /** Subset estrutural da resposta Express usada no stream do PDF (padrão de sso.ts). */
 type PdfHttpResponse = { setHeader(name: string, value: string | number): unknown; end(chunk?: unknown): unknown };
 
@@ -402,6 +403,10 @@ export class PatientPrescriptionsController {
     const patientId = parse(uuid, rawId);
     const patient = await this.db.query('SELECT 1 FROM patients WHERE id=$1 AND org_id=$2', [patientId, actor.org_id]);
     if (!patient.rowCount) throw new NotFoundException('Paciente não encontrado');
+    // Histórico de prescrições é prontuário completo: vínculo de cuidado ou
+    // break-glass auditado para os papéis clínicos (admin supervisiona a org).
+    if (actor.role === 'doctor' || actor.role === 'nurse')
+      await requireCareContext(this.db, actor, patientId, breakGlassOf(req));
     const rows = await this.db.query(
       `SELECT ${PRESCRIPTION_COLUMNS}, e.patient_id, u.display_name AS prescriber_name
        FROM prescriptions p
@@ -423,8 +428,14 @@ export class PrescriptionsController {
     const actor = req.actor;
     requireRole(actor, ['admin', 'doctor', 'nurse']);
     const id = parse(uuid, rawId);
-    const row = await this.db.query<any>(`SELECT ${PRESCRIPTION_COLUMNS} FROM prescriptions p WHERE p.id=$1 AND p.org_id=$2`, [id, actor.org_id]);
+    const row = await this.db.query<any>(
+      `SELECT ${PRESCRIPTION_COLUMNS}, e.patient_id
+         FROM prescriptions p
+         JOIN encounters e ON e.id=p.encounter_id AND e.org_id=p.org_id
+        WHERE p.id=$1 AND p.org_id=$2`, [id, actor.org_id]);
     if (!row.rowCount) throw new NotFoundException('Prescrição não encontrada');
+    if (actor.role === 'doctor' || actor.role === 'nurse')
+      await requireCareContext(this.db, actor, row.rows[0].patient_id, breakGlassOf(req));
     await audit(this.db, actor, 'prescription.read', 'prescription', id);
     return row.rows[0];
   }

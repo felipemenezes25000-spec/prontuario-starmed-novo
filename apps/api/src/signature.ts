@@ -248,6 +248,12 @@ export class SignatureController {
         policyOid: r.policy_oid,
         timestampAuthority: r.timestamp_authority,
         signatureIsQualified: r.signature_is_qualified,
+        // Rótulo honesto tri-estado (nunca "assinatura válida" sem evidência):
+        // qualified = carimbo de tempo + OIDs ITI; not_qualified = sem carimbo
+        // (ex.: AD-RB); unknown = indeterminado na emissão.
+        qualification: r.signature_is_qualified === true ? 'qualified'
+          : r.signature_is_qualified === false ? 'not_qualified' : 'unknown',
+        timestamped: Boolean(r.timestamp_authority),
         createdAt: r.created_at,
         signer: { id: r.signer_id, displayName: r.signer_name }
       }))
@@ -301,10 +307,21 @@ export class SignatureController {
       timestampPresent: verified.timestampPresent
     });
 
+    const qualification = qualifySignature(
+      verified.timestampPresent,
+      typeof verified.policyOid === 'string' ? verified.policyOid.startsWith(OIDS.POLICY_ARC + '.') : null
+    );
+
     return {
       signatureValid: verified.signatureValid,
       chainValid,
       ...(chainReason ? { chainReason } : {}),
+      // Tri-estado honesto da qualificação (mesma semântica da emissão).
+      qualification: qualification === true ? 'qualified' : qualification === false ? 'not_qualified' : 'unknown',
+      // Honestidade sobre revogação: OCSP/CRL ainda NÃO é consultado — uma
+      // assinatura com certificado posteriormente revogado passaria por este
+      // check. Pendência P0-06 (bloqueio externo: ponto de revogação ICP-Brasil).
+      revocation: { checked: false, reason: 'OCSP/CRL não integrado — pendência declarada' },
       signer,
       timestampPresent: verified.timestampPresent,
       policyOid: verified.policyOid,
@@ -344,12 +361,16 @@ export class SignatureVerifyController {
     if (!signature || signature.document_type !== documentType)
       throw new NotFoundException('Documento assinado não encontrado');
 
-    const { rows: codes } = await this.db.query(
-      'SELECT code_hash, used_at FROM signature_verify_codes WHERE document_id = $1', [signature.id]);
+    // Consumo ATÔMICO de uso único (J1: replay não reutiliza o código): o UPDATE
+    // com `used_at IS NULL` é a própria checagem — código errado E código já usado
+    // respondem 401 com a MESMA mensagem (sem enumeração).
     const expected = hashVerifyCode(query._secretCode);
-    const match = codes.find((c: any) => c.code_hash === expected);
-    // Código errado OU já consumido (uso único) → 401.
-    if (!match || match.used_at) throw new UnauthorizedException('Código de verificação inválido');
+    const consumed = await this.db.query(
+      `UPDATE signature_verify_codes SET used_at = now()
+        WHERE document_id = $1 AND code_hash = $2 AND used_at IS NULL
+        RETURNING code_hash`,
+      [signature.id, expected]);
+    if (!consumed.rowCount) throw new UnauthorizedException('Código de verificação inválido');
 
     const baseUrl = verifyBaseUrl();
     const documentKey = documentType === 'prescription' ? 'prescription' : 'examRequest';

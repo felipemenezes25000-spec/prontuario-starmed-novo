@@ -36,7 +36,11 @@ const orderSchema = z.object({
 const orderStatusSchema = z.object({
   status: z.enum(['in_progress', 'completed', 'cancelled']),
   resultSummary: z.string().trim().max(10000).optional(),
-  pacsUrl: z.string().url().max(2000).optional()
+  pacsUrl: z.string().url().max(2000).optional(),
+  // Resultado crítico (H-12 / J1 #12): ausente = não altera; true/false define o
+  // flag e QUALQUER novo resultado zera o reconhecimento anterior (obrigatório
+  // reconhecer de novo).
+  critical: z.boolean().optional()
 }).strict();
 
 export type AdmissionStatus = 'admitted' | 'transferred' | 'discharged';
@@ -257,11 +261,61 @@ export class HospitalController {
       if (!order.rowCount) throw new NotFoundException('Pedido não encontrado');
       orderTransition(order.rows[0].status as OrderStatus, body.status);
       const updated = await c.query<any>(
-        'UPDATE diagnostic_orders SET status=$3, result_summary=COALESCE($4,result_summary), pacs_url=COALESCE($5,pacs_url), updated_at=now() WHERE id=$1 AND org_id=$2 RETURNING id,status,updated_at',
-        [id, actor.org_id, body.status, body.resultSummary ?? null, body.pacsUrl ?? null]);
-      await audit(c, actor, 'hospital.order.' + body.status, 'diagnostic_order', id);
+        `UPDATE diagnostic_orders
+            SET status=$3,
+                result_summary=COALESCE($4,result_summary),
+                pacs_url=COALESCE($5,pacs_url),
+                critical=CASE WHEN $6::boolean IS NULL THEN critical ELSE $6 END,
+                critical_ack_by=CASE WHEN $6::boolean IS NULL THEN critical_ack_by ELSE NULL END,
+                critical_ack_at=CASE WHEN $6::boolean IS NULL THEN critical_ack_at ELSE NULL END,
+                updated_at=now()
+          WHERE id=$1 AND org_id=$2
+          RETURNING id,status,critical,critical_ack_at,updated_at`,
+        [id, actor.org_id, body.status, body.resultSummary ?? null, body.pacsUrl ?? null, body.critical ?? null]);
+      await audit(c, actor, 'hospital.order.' + body.status, 'diagnostic_order', id,
+        body.critical === undefined ? { status: body.status } : { status: body.status, critical: body.critical });
       return updated.rows[0];
     });
+  }
+
+  /**
+   * Confirmação de recebimento de resultado crítico (J1 #12). Notificação push não
+   * conta: só o reconhecimento explícito de profissional habilitado encerra a
+   * pendência, e ele fica em audit_events com actor e horário.
+   */
+  @Post('orders/:id/critical-ack')
+  async acknowledgeCritical(@Req() req: ReqWithActor, @Param('id') rawId: string) {
+    const actor = req.actor;
+    requireRole(actor, ['doctor', 'nurse']);
+    const id = parse(uuid, rawId);
+    return this.db.tx(async c => {
+      const order = await c.query<any>(
+        'SELECT critical, critical_ack_at FROM diagnostic_orders WHERE id=$1 AND org_id=$2 FOR UPDATE', [id, actor.org_id]);
+      if (!order.rowCount) throw new NotFoundException('Pedido não encontrado');
+      if (!order.rows[0].critical) throw new ConflictException('Pedido não é um resultado crítico');
+      if (order.rows[0].critical_ack_at) throw new ConflictException('Resultado crítico já reconhecido');
+      const updated = await c.query<any>(
+        `UPDATE diagnostic_orders SET critical_ack_by=$3, critical_ack_at=now(), updated_at=now()
+          WHERE id=$1 AND org_id=$2 AND critical AND critical_ack_at IS NULL
+          RETURNING id, critical_ack_at`,
+        [id, actor.org_id, actor.id]);
+      if (!updated.rowCount) throw new ConflictException('Resultado crítico já reconhecido');
+      await audit(c, actor, 'hospital.order.critical.acknowledged', 'diagnostic_order', id);
+      return updated.rows[0];
+    });
+  }
+
+  /** Pendências de resultado crítico sem reconhecimento — tela de maior risco. */
+  @Get('orders/critical/pending')
+  async listCriticalPending(@Req() req: ReqWithActor) {
+    const actor = req.actor;
+    requireRole(actor, ['admin', 'doctor', 'nurse']);
+    const rows = await this.db.query(
+      `SELECT id,order_type,loinc_code,description,status,priority,result_summary,critical_ack_at,ordered_at,updated_at
+         FROM diagnostic_orders
+        WHERE org_id=$1 AND critical AND critical_ack_at IS NULL AND status <> 'cancelled'
+        ORDER BY updated_at DESC NULLS LAST LIMIT 200`, [actor.org_id]);
+    return rows.rows;
   }
 
   @Get('orders')
@@ -273,7 +327,7 @@ export class HospitalController {
     if (patientId) { params.push(parse(uuid, patientId)); filters.push(`patient_id=$${params.length}`); }
     if (status) { params.push(status); filters.push(`status=$${params.length}`); }
     const rows = await this.db.query(
-      `SELECT id,order_type,loinc_code,description,status,priority,result_summary,pacs_url,ordered_at,updated_at
+      `SELECT id,order_type,loinc_code,description,status,priority,result_summary,pacs_url,critical,critical_ack_at,ordered_at,updated_at
        FROM diagnostic_orders WHERE ${filters.join(' AND ')} ORDER BY ordered_at DESC LIMIT 200`, params);
     return rows.rows;
   }

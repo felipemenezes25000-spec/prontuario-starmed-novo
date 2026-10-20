@@ -246,9 +246,33 @@ executadas e PROVADAS no CI (runs 39473520447 → 39482803902):**
    (padrão off; hard bloqueia revoked/unknown); UI de download+certificado.
    **ByteRange (embarque no PDF) segue PENDENTE e está declarado em toda resposta.**
 
+**TERCEIRA RODADA (mesmo dia) — itens de fechamento, todos verdes no CI:**
+
+- `22a9be2`+`5067fc7` **agenda** (`PATCH /appointments/:id/status`: check-in/concluir/
+  cancelar/no-show com máquina de estados + auditoria) e **rate limit DISTRIBUÍDO**
+  (`021_rate_limit.sql` + `rate-limit.ts` em Postgres, fail-open documentado,
+  `TRUST_PROXY` opcional — sem dependência nova/lockfile).
+- `3d48460`/`8b56ef4`/`23a5d09` **vínculo nas listas de prescrição** + **UI de
+  break-glass** (painel com justificativa 20..500 auditada, retry com header) +
+  **UI da agenda** (botões contextuais com 403/409/404 amigáveis).
+- `8b56ef4`+`36b6007` **smoke ampliado**: receita ponta a ponta (rascunho→alertas→
+  atestação→PDF persistido), **J1 #8** (certificado fora do trust store → 400),
+  **J1 #12** (crítico → fila → ack → fila vazia), **readback de auditoria** com
+  requestId via `GET /audit/events` (admin).
+- `9aadb12` **EMBARQUE PAdES (ByteRange) VERDE**: `pki/pades-embed.ts` (ByteRange
+  `[0 A B C]` gravado antes de assinar; CMS cobre os bytes externos ao buraco;
+  `/Contents` de largura fixa; AcroForm invisível; xref reconstruído preservando
+  offsets), prescrição: `reserved → sign → embed → content+sha256 na mesma transação`,
+  `POST /prescriptions/:id/verify-pades`, 4 testes puros no CI. Ciclo de debug
+  guiado só por logs (3 runs vermelhos → bug raiz: faltava o grupo `0` do ByteRange).
+- **Conhecido: teste FLAKY** `pki.test.ts` "carimbo de ACT" (1 falha em ~10; re-run
+  verde) — estabilizar é pendência declarada.
+
 **ABERTO (próximos passos, ordem de risco):**
-- CI: verde em 3 execuções consecutivas (feito); próximo passo é ampliar o smoke
-  (tenant duplo, auditoria readback, fixture de assinatura) e manter todo push sob gate.
+1. Validar o PAdES positivo com **certificado ICP real** e submeter ao **validador do ITI** (externo — sessão humana); homologar ACT/TSA; `REVOCATION_MODE=soft` em homologação.
+2. Estabilizar o teste flaky de ACT (`pki.test.ts`); acrescentar replay de operationId e tenant duplo ao smoke (tenant já coberto pelo drill).
+3. Base farmacológica licenciada (externo); especial classes com regulação versionada; exports LGPD × break-glass; E2E de UI (Playwright); xref comprimido em `pades-embed` (se PDF externo surgir).
+4. Blocos externos inalterados: IdP OIDC, RNDS/LIS/PACS, pentest, homologações, nomeação clínica/DPO — **"não apto a uso clínico real" permanece**.
 - `controllers.ts`: transições de agenda (check-in/no-show/cancel — enums já existem
   no schema, endpoints não).
 - P0-05 residual: GUC `starmed.org_id` por transação + papel de app não-owner + RLS

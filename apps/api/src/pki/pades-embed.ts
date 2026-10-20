@@ -164,7 +164,8 @@ export function stampByteRange(pdf: Buffer): Buffer {
   const c = pdf.length;
   const digits = (n: number) => { const s = String(n); if (s.length > 10) throw new Error('ByteRange excede 10 dígitos'); return s.padStart(10, '0'); };
   const prefix = '/ByteRange ';
-  const replacement = `[${digits(a)} ${digits(b)} ${digits(c)}]`;
+  // ByteRange = [0 A B C]: 4 valores (o primeiro é sempre 0 — início do arquivo).
+  const replacement = `[${digits(0)} ${digits(a)} ${digits(b)} ${digits(c)}]`;
   if (replacement.length !== BYTERANGE_SLOT.length)
     throw new Error(
       `ByteRange com largura diferente do slot (offsets mudariam): ` +

@@ -1,5 +1,15 @@
 # Fluxo de receita: telas e atualização de status
 
+> **⚠️ Escopo (revisão de 20/10/2026):** este documento descreve o fluxo do **app mobile
+> legado (RenoveJá)** — rotas Expo `/(patient)/…`, `CreatePrescriptionAsync`, status
+> `submitted → … → delivered`. Ele **não** descreve a implementação atual do StarMed
+> neste repositório. O fluxo IMPLEMENTADO em `apps/api/src/prescriptions.ts` é
+> `draft → signed → cancelled` (+ `signature_status: none | attested | pades`), com
+> validação estruturada de dose/via, motor de segurança medicamentosa
+> (info/review_required/block), PDF próprio com SHA-256 e idempotência por
+> `operationId` — ver `docs/engineering/EXECUCAO_2026-10-20.md`. Pedido de receita pelo
+> paciente (fila/fila de aprovação) **não existe** no StarMed atual: é backlog (D4/D8).
+
 Este documento descreve o fluxo de telas no app durante o processo de renovação de receita e em que momento cada status é atualizado no backend.
 
 O atendimento é da rede pública e **gratuito para o paciente**: assim que o médico aprova, o pedido segue direto para a assinatura digital.

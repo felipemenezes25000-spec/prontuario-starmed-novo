@@ -177,23 +177,61 @@ provedor OIDC real (config via OIDC_* no .env.example), credencial ACT SERPRO
 
 ## EM ABERTO (continuar daqui)
 
-### A. Sete frentes para passar os concorrentes — CONTRATO PRONTO, IMPLEMENTAÇÃO NÃO
+### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 
-Estavam agendadas 13 subagentes quando a sessão foi interrompida. Os STUBS e o contrato
-existem em `ehr-platform`:
+Diretriz do usuário nesta rodada: **"execute tudo direto sem testa nada"** — nenhum
+`npm test`, build ou execução foi feito. Tudo abaixo é **IMPLEMENTADO, NÃO VALIDADO**;
+a primeira verificação executada será o CI após push (push NÃO feito: este arquivo exige
+`npm test`+`npm run build` antes de push — incompatível com a diretriz).
 
-- Backend (stubs com exports travados, já montados em `src/index.ts`):
-  `routes/fhir.ts` (FHIR R4+SMART), `routes/interop.ts` (HL7 v2 MLLP + TISS + NFSe),
-  `routes/lgpd.ts` (ICP-Brasil/PAdES + LGPD), `routes/teleconsult.ts` (WebRTC),
-  `routes/cds.ts` (IA clínica: CID-10/TUSS, dictation, CDS Hooks), `routes/portal.ts`
-  (portal do paciente + CRM/WhatsApp), `routes/hospital.ts` (leitos/ADT/344/LIS-PACS),
-  `routes/product.ts` (editor de templates, importadores, multi-tenant/RBAC, métricas).
-  Migrações numeradas 002–009 (uma por frente).
-- Frontend (stubs registrados no roteador): `pages/Teleconsult.tsx`, `Hospital.tsx`,
-  `TemplateEditor.tsx`, `Portal.tsx`, `Import.tsx`, `Admin.tsx`, `Metrics.tsx`.
-- **Contrato de UI**: `ehr-platform/frontend/DESIGN.md` (obrigatório para qualquer agente
-  de tela). Primitivos prontos em `src/components/ui.tsx` + `CommandPalette.tsx`.
-- Fundação verificada: typecheck backend e frontend limpos com os stubs.
+Feito (commits locais, branch `main`, a partir de `20b8012`):
+
+1. `c5edfe7` **CI completo (P0-01/02/03)**: `npm ci`; runner versionado
+   `apps/api/src/migrate.ts` (schema_migrations + sha256 + fail-closed em drift +
+   `--adopt`/`--dry-run`); bootstrap de admin sintético; start da API com espera de
+   `/health`; smoke **e** smoke:MFA no CI; Gitleaks sem `continue-on-error`
+   (+`GITLEAKS_CONFIG`); job SCA com `npm audit --audit-level=critical` + SBOM;
+   CODEOWNERS; PR template com gates do DoD; compose parou de aplicar initdb parcial
+   (runner é a fonte única); getting-started/README/.env.example atualizados.
+2. `bc74ffd` **docs P0-07/P0-12**: `docs/security/THREAT-MODEL-STRIDE.md` (STRIDE por
+   domínio, status e bloqueios externos) e `docs/clinical/HAZARD-LOG-FMEA.md` (27
+   perigos, J1 mapeado, gates NO-GO).
+3. `e3fb692` **D5**: resultado crítico com reconhecimento auditado
+   (`POST /hospital/orders/:id/critical-ack`, fila `/orders/critical/pending`,
+   migração `017_critical_results.sql`).
+4. `2d4b049` **sec**: `POST cds-services/:hook` deixou de ser anônimo.
+5. `794062c` **P0-04 web MFA**: etapa TOTP/recuperação no login, página Segurança
+   (enroll/activate/códigos únicos/regenerar/desativar), SSO + callback, expiração de
+   sessão tratada, logout que limpa estado.
+6. `d05dd52` **P1-04 prescrição**: `apps/api/src/prescriptions.ts` (draft estruturado
+   com dose/via obrigatórios, motor `info|review_required|block` com override
+   auditado, só doctor ativo assina, PDF próprio com sha256, idempotência por
+   operationId, cancelamento rastreado, trigger de imutabilidade) + migração
+   `016_prescriptions_flow.sql`; CORS de main.ts agora inclui PATCH.
+7. `a90dd5b` ci: `GITLEAKS_CONFIG` apontado para `.github/gitleaks.toml`.
+
+Proteção de branch aplicada via API (PR + 1 aprovação + checks `API — testes, build e
+smoke`/`Web`/`SCA`/`Gitleaks`, sem force push; `enforce_admins=false` para não travar
+repo solo). `docs/engineering/EXECUCAO_2026-10-20.md` = matriz completa.
+
+**EM ANDAMENTO ao fim da sessão** (subagentes rodando, verificar com `git status`):
+P0-05 ABAC+auditoria (`security.ts`, `controllers.ts`… + migração `015_*`),
+P0-06 status honesto de assinatura (`signature.ts`, `pki/*`),
+P1-08 portal do paciente (UI `apps/web`). Se falharem sem editar: as tentativas
+anteriores morreram sem tocar em arquivo — reaplicar com mandato enxuto.
+
+**ABERTO (próximos passos, ordem de risco):**
+- Rodar CI (push/PR) e corrigir o que acusar, sem desligar gates.
+- `controllers.ts`: transições de agenda (check-in/no-show/cancel — enums já existem
+  no schema, endpoints não).
+- P0-05 residual: GUC `starmed.org_id` por transação + papel de app não-owner + RLS
+  `FORCE` com preflight (não declarar isolamento por RLS antes disso).
+- Smoke ampliado: tenant duplo, auditoria readback, fixture de assinatura (aceite C1
+  ainda parcial).
+- Prescrição: UI web (contrato pronto em `prescriptions.ts`) e integração PAdES real
+  (hoje `signature_status='attested'` com nota honesta no PDF/resposta).
+- Fronteiras externas inalteradas: IdP OIDC, ITI/ACT/TSA, RNDS/LIS/PACS, base
+  farmacológica licenciada, pentest, nomeação dos responsáveis clínicos/DPO.
 
 ### B. Plano P0 do outro assistente (avaliação de produto, presente no histórico)
 
@@ -202,9 +240,12 @@ prescrição eletrônica · exames/imagens · FHIR R4/RNDS/TISS · IA clínica c
 
 ### C. Dívidas conhecidas do repo oficial
 
-- Smoke (`npm run smoke`) só em banco descartável com `STARMED_TEST_DB=true`.
+- Smoke (`npm run smoke`) só em banco descartável com `STARMED_TEST_DB=true` — agora
+  rodando também no CI (job `api`), com smoke:MFA junto.
 - Trust store ICP-Brasil sem raízes e TSA desligado NÃO foram herdados — implementar certo.
-- TISS: XSD oficial da ANS precisa ser buscado (ausente no legado).
+  (Raízes/políticas públicas em `certs/icp-brasil/` já estão; falta homologação real.)
+- ~~TISS: XSD oficial da ANS precisa ser buscado~~ — **QUITADA**: `schemas/tiss/4.01.00/`
+  está no repo e o CI valida fixture sintética + gate negativo (job `interop`).
 
 ## DECISÕES PENDENTES (perguntar ao retomar)
 
@@ -220,12 +261,14 @@ prescrição eletrônica · exames/imagens · FHIR R4/RNDS/TISS · IA clínica c
 ```powershell
 # repo oficial
 cd C:\Users\Felipe\Documents\deepseek-harness\default-workspace\.starmed-inspect
-npm install; npm test; npm run build          # baseline atual: 21/21 + build verde
+npm install; npm test; npm run build          # baseline: 21/21 local (19/10) e CI 108/108 (run 39343627970, 20/10, antes da rodada V2)
 npm run smoke -w @starmed/api                 # só com STARMED_TEST_DB=true (banco descartável)
 npm run smoke:mfa -w @starmed/api             # E2E do MFA (idem: banco descartável)
 docker compose up -d                          # Postgres do StarMed (compor POSTGRES_PASSWORD)
+npm run migrate                               # runner versionado: schema.sql + 002..017
+npm run migrate -- --dry-run                  # só planejar; --adopt registra base antiga
 # banco descartável para smoke nesta máquina: container ehr-platform-db-1 (:5433),
-# criar database p.ex. starmed_p0a_scratch e aplicar database/schema.sql + 002..005
+# criar database p.ex. starmed_p0a_scratch e rodar `npm run migrate` apontando DATABASE_URL para ele
 
 # plataforma paralela
 cd C:\Users\Felipe\Documents\deepseek-harness\default-workspace\ehr-platform
@@ -245,6 +288,11 @@ cd frontend; npx vite --port 5273             # 5173 está ocupada
 
 - **Subagentes morrem em repositórios grandes** (4 quedas em 6.475 arquivos). Mandato
   enxuto: amostrar, classificar por pasta, jamais listar arquivo a arquivo.
+  **Replicado em 20/10/2026**: 7 das 12 tentativas morreram sem editar nada (o padrão
+  é morrer na fase de leitura). O que funcionou: mandato com **ordem de leitura em
+  blocos curtos** (arquivos pequenos primeiro, grep nos grandes), **lista exata de
+  arquivos proibidos** (conflito entre agentes) e **retry** — o agente morto não deixa
+  sujeira (git status limpo = não escreveu nada).
 - `git push` funciona via GitHub CLI (`credential.https://github.com.helper = gh`).
 - Commits relevantes: `c2fdca5` (MVP), `6495811` (integração do legado + fix build).
 - Rode `npm test` + `npm run build` antes de qualquer push e registre o resultado aqui.

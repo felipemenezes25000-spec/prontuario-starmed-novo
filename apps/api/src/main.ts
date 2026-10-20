@@ -42,7 +42,8 @@ async function bootstrap(){
   app.use(helmet());
   // Proxy reverso real (produção): TRUST_PROXY=true habilita X-Forwarded-For —
   // só ative atrás do proxy que sobrescreve o header (senão o IP é forjável).
-  if(process.env.TRUST_PROXY==='true') app.set('trust proxy', 1);
+  // Ajuste é do Express subjacente (getInstance é any no HttpAdapter do Nest).
+  if(process.env.TRUST_PROXY==='true') app.getHttpAdapter().getInstance().set('trust proxy', 1);
   // Rate limit DISTRIBUÍDO (P0-07): contador em Postgres (021), compartilhado
   // entre instâncias — mesmas rotas e mesmos limites de antes, sem segredo novo.
   const rateLimiter=(route:string,message:string,limit:number,minutes:number)=>

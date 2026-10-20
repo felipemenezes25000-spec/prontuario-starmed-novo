@@ -11,7 +11,7 @@ import { MfaController, MfaService } from './auth-mfa';
 import { SsoController, OidcService } from './sso';
 import { Db } from './db';
 import { JwtGuard, requestContext } from './security';
-import { HealthController, AuthController, UsersController, PatientsController, AppointmentsController, EncountersController, FhirController, AiController } from './controllers';
+import { HealthController, AuthController, UsersController, PatientsController, AppointmentsController, EncountersController, FhirController, AiController, AuditController } from './controllers';
 import { FhirExtraController, SmartWellKnownController } from './fhir-extra';
 import { SignatureController, SignatureVerifyController } from './signature';
 import { InteropController } from './interop/interop.controller';
@@ -30,7 +30,8 @@ import { assertSecurityConfig } from './config';
     ClinicalAddendaController,AllergiesController,ProblemsController,FhirController,AiController,MfaController,SsoController,
     FhirExtraController,SmartWellKnownController,SignatureController,SignatureVerifyController,InteropController,
     TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController,
-    LgpdController,PatientLgpdController,EncounterPrescriptionsController,PatientPrescriptionsController,PrescriptionsController
+    LgpdController,PatientLgpdController,EncounterPrescriptionsController,PatientPrescriptionsController,PrescriptionsController,
+    AuditController
   ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]
 })

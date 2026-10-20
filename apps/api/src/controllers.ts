@@ -99,8 +99,33 @@ export class PatientsController {
     return r.rows[0];
   }
 }
-/** Estado e transições da agenda (schema.sql:51 — enum pré-existente). */
-export type AppointmentFlow = 'scheduled'|'checked_in'|'completed'|'cancelled'|'no_show';
+@Controller('audit')
+export class AuditController {
+  constructor(private db:Db){}
+  /** Leitura da trilha (admin, escopo da org): readback auditável de auditoria —
+   *  P0-05/C5. Sem PHI em console: os eventos vivem no banco e saem só via rota
+   *  autorizada; requestId em details permite correlação com logs/respostas. */
+  @Get('events')
+  async list(@Req() req:R,
+             @Query('action') action?:string,
+             @Query('targetId') targetId?:string,
+             @Query('limit') limit?:string){
+    const actor=a(req);requireRole(actor,['admin']);
+    const max=Math.min(200,Math.max(1,Number(limit)||50));
+    const filters=['org_id=$1'];
+    const params:unknown[]=[actor.org_id];
+    if(action){params.push(String(action).slice(0,100));filters.push(`action=$${params.length}`);}
+    if(targetId){params.push(parse(uuid,targetId));filters.push(`target_id=$${params.length}`);}
+    params.push(max);
+    const rows=await this.db.query(
+      `SELECT id,actor_id,action,target_type,target_id,details,occurred_at
+         FROM audit_events WHERE ${filters.join(' AND ')}
+        ORDER BY occurred_at DESC LIMIT $${params.length}`,params);
+    return rows.rows;
+  }
+}
+
+/** Estado e transições da agenda (schema.sql:51 — enum pré-existente). */export type AppointmentFlow = 'scheduled'|'checked_in'|'completed'|'cancelled'|'no_show';
 const APPOINTMENT_TRANSITIONS: Record<AppointmentFlow, AppointmentFlow[]> = {
   scheduled: ['checked_in','cancelled','no_show'],
   checked_in: ['completed','cancelled'],

@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { strict as assert } from 'node:assert';
 import { config } from 'dotenv';
 import { resolve } from 'node:path';
+import { buildTestPki, pem, pkcs8Pem } from './pki/test-pki';
 config({path:resolve(process.cwd(),'../../.env')});
 config({path:resolve(process.cwd(),'.env')});
 
@@ -79,6 +80,56 @@ async function main(){
   await request('/appointments',token,'POST',{patientId:patient.id,practitionerId:doctor.id,scheduledAt:start,durationMinutes:30,kind:'consultation'},201);
   await request('/appointments',token,'POST',{patientId:patient.id,practitionerId:doctor.id,scheduledAt:new Date(Date.parse(start)+15*60000).toISOString(),durationMinutes:30,kind:'follow_up'},409);
   await request('/appointments',token,'POST',{patientId:patient.id,practitionerId:doctor.id,scheduledAt:new Date(Date.parse(start)+30*60000).toISOString(),durationMinutes:30,kind:'follow_up'},201);
-  console.log('StarMed smoke test passed: auth, patient history, notes, immutable addenda, FHIR and booking conflicts');
+  // --- Lacunas do aceite C1 fechadas nesta rodada (dados 100% sintéticos) ---
+
+  // 1) Prescrição de ponta a ponta: rascunho estruturado → alertas → atestação → PDF persistido.
+  const rx = await request<any>('/encounters/'+visit.id+'/prescriptions',token,'POST',{
+    operationId: randomUUID(),
+    medication:{name:'Medicamento Fictício 10 mg', form:'comprimido'},
+    dose:{value:10, unit:'mg'},
+    route:'oral', frequency:'8/8h', duration:'5 dias',
+    times:['08:00','16:00'], quantity:'10 comprimidos',
+    indication:'Indicação fictícia para verificação automatizada',
+    instructions:'Sem uso real; dados sintéticos.'
+  },201);
+  assert.ok(Array.isArray(rx.safetyAlerts),'prescrição devolve safetyAlerts tipados');
+  const rxList = await request<any[]>('/patients/'+patient.id+'/prescriptions',token);
+  assert.ok(rxList.some((p:any)=>p.id===rx.id),'lista de prescrições do paciente contém o rascunho');
+  const rxSigned = await request<any>('/prescriptions/'+rx.id+'/sign',token,'POST',{operationId:randomUUID()},201);
+  assert.equal(rxSigned.signature_status,'attested','atestação ≠ assinatura qualificada');
+  const pdfRes = await fetch(new URL('/prescriptions/'+rx.id+'/pdf',apiBase),{headers:{authorization:'Bearer '+token}});
+  assert.equal(pdfRes.status,200,'PDF persistido é servido');
+  const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());
+  assert.ok(pdfBytes.subarray(0,5).toString('latin1')==='%PDF-','artefato começa com %PDF');
+
+  // 2) J1 #8: certificado FORA do trust store ICP-Brasil (CA de teste) → 400, sem emissão.
+  const testPki = await buildTestPki();
+  const badPades = await fetch(new URL('/prescriptions/'+rx.id+'/sign-pades',apiBase),{
+    method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+token},
+    body:JSON.stringify({
+      signerCertPem: pem(testPki.rogueLeaf),
+      privateKeyPkcs8Pem: await pkcs8Pem(testPki.rogueLeaf.privateKey),
+      councilNumber:'123456', councilState:'SP'
+    })
+  });
+  assert.equal(badPades.status,400,'cadeia fora do trust store ICP-Brasil deve ser rejeitada (J1 #8)');
+
+  // 3) D5/J1 #12: resultado crítico entra na fila e só some com reconhecimento auditado.
+  const order = await request<any>('/hospital/orders',token,'POST',
+    {patientId:patient.id,orderType:'lab',description:'Hemograma fictício',priority:'urgent'},201);
+  await request('/hospital/orders/'+order.id+'/status',token,'PATCH',{status:'in_progress',critical:true});
+  const pendingBefore = await request<any[]>('/hospital/orders/critical/pending',token);
+  assert.ok(pendingBefore.some((o:any)=>o.id===order.id),'resultado crítico sem ack fica na fila');
+  await request('/hospital/orders/'+order.id+'/critical-ack',token,'POST',undefined,201);
+  const pendingAfter = await request<any[]>('/hospital/orders/critical/pending',token);
+  assert.ok(!pendingAfter.some((o:any)=>o.id===order.id),'reconhecimento esvazia a fila');
+
+  // 4) Auditoria legível pelo admin com requestId correlacionável (readback do P0-05).
+  const auditEvents = await request<any[]>('/audit/events?action=prescription.signed',admin);
+  assert.ok(auditEvents.length>=1,'auditoria registra prescription.signed');
+  assert.ok(auditEvents[0].details && typeof auditEvents[0].details.requestId==='string',
+    'evento de auditoria carrega requestId para correlação');
+
+  console.log('StarMed smoke test passed: auth, patient history, notes, immutable addenda, FHIR, booking conflicts, prescription+PDF, rejected foreign cert, critical-result ack, audit readback');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

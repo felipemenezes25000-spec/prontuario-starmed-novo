@@ -85,10 +85,10 @@ async function main(){
   // 1) Prescrição de ponta a ponta: rascunho estruturado → alertas → atestação → PDF persistido.
   const rx = await request<any>('/encounters/'+visit.id+'/prescriptions',token,'POST',{
     operationId: randomUUID(),
-    medication:{name:'Medicamento Fictício 10 mg', form:'comprimido'},
+    medication:{name:'Medicamento Fictício 10 mg', form:'tablet'},
     dose:{value:10, unit:'mg'},
     route:'oral', frequency:'8/8h', duration:'5 dias',
-    times:['08:00','16:00'], quantity:'10 comprimidos',
+    times:['08:00','16:00'], quantity:10,
     indication:'Indicação fictícia para verificação automatizada',
     instructions:'Sem uso real; dados sintéticos.'
   },201);

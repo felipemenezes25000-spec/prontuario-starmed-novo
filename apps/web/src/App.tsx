@@ -213,6 +213,15 @@ export default function App(){
   const [aiResult,setAiResult]=useState<unknown>(null);
   const [loading,setLoading]=useState(false);
   const [serverReady,setServerReady]=useState(false);
+  // P0-05 Break-glass: carregamento do prontuário pendente de motivo de emergência.
+  // `breakGlass` guarda o loader original; o retry o reexecuta com X-Break-Glass-Reason.
+  const [breakGlass,setBreakGlass]=useState<((headers:Record<string,string>)=>Promise<void>)|null>(null);
+  const [breakGlassReason,setBreakGlassReason]=useState('');
+  const [breakGlassError,setBreakGlassError]=useState('');
+  // ST-P1-011 Agenda: id do compromisso com o campo de motivo de cancelamento aberto.
+  const [cancelTarget,setCancelTarget]=useState('');
+  const [cancelReason,setCancelReason]=useState('');
+  const [apptBusy,setApptBusy]=useState('');
   // Aviso amigável exibido na tela de login (sessão encerrada, MFA desativado…)
   const [accessNotice,setAccessNotice]=useState('');
   // Entrada sem sessão staff: 'portal' abre a área do paciente (sessão própria, segregada da clínica).
@@ -222,6 +231,42 @@ export default function App(){
   const isDoctor=user?.role==='doctor';
   const hasUnsavedChanges=!!note && JSON.stringify(sections)!==JSON.stringify(note.content.sections);
   function alert(text:string,kind:Banner['kind']='info'){setBanner({text,kind});}
+  // ── Break-glass (P0-05) ──────────────────────────────────────────────────────
+  /**403 cuja mensagem cita "break-glass" = leitura de prontuário completo sem vínculo de
+   *  cuidado; o backend exige o header X-Break-Glass-Reason (20..500 chars, auditado).
+   *  Qualquer outro403 (papel, validação…) continua sendo erro comum. */
+  function isBreakGlassError(e:unknown):e is ApiError{
+    return e instanceof ApiError&&e.status===403&&/break-glass/i.test(e.message);
+  }
+  function resetBreakGlass(){setBreakGlass(null);setBreakGlassReason('');setBreakGlassError('');}
+  /** Executa um carregamento do prontuário interceptando o403 de break-glass: nesse caso abre
+   *  o painel guardando o loader original para o retry; demais erros são repassados ao chamador. */
+  async function runRecordLoad(loader:(headers?:Record<string,string>)=>Promise<void>){
+    try{await loader();}
+    catch(e){
+      if(isBreakGlassError(e)){setBreakGlassError('');setBreakGlassReason('');setBreakGlass(()=>loader);return;}
+      throw e;
+    }
+  }
+  /** Cancela o acesso: fecha o painel e registra o desfecho no banner. */
+  function declineBreakGlass(){resetBreakGlass();alert('Acesso negado — sem vínculo de cuidado.','info');}
+  /** Continua: refaz a chamada original com o header autorizador; sucesso => banner de auditoria. */
+  async function confirmBreakGlass(){
+    const loader=breakGlass;if(!loader)return;
+    const reason=breakGlassReason.trim();
+    if(reason.length<20){setBreakGlassError('Descreva o motivo do acesso com pelo menos 20 caracteres.');return;}
+    if(reason.length>500){setBreakGlassError('Motivo acima do limite de 500 caracteres.');return;}
+    try{
+      await loader({'X-Break-Glass-Reason':reason});
+      resetBreakGlass();
+      alert('Acesso de emergência registrado na auditoria.','info');
+    }catch(e){
+      // Recusa repetida (ex.: motivo rejeitado): mantém o painel aberto com o erro inline.
+      if(isBreakGlassError(e)){setBreakGlassError(e.message);return;}
+      resetBreakGlass();
+      alert((e as Error).message,'error');
+    }
+  }
   /** Limpa todo o estado clínico/local da sessão (usado em logout e sessão expirada). */
   function resetSessionState(){
     setBanner(null);setView('dashboard');
@@ -235,6 +280,7 @@ export default function App(){
     setNewStaff({displayName:'',email:'',role:'doctor',password:''});
     setAppForm({patientId:'',practitionerId:'',scheduledAt:'',durationMinutes:30,kind:'consultation'});
     setPassphrase('');setPending(0);setTranscript('');setAiResult(null);setLoading(false);
+    resetBreakGlass();setCancelTarget('');setCancelReason('');setApptBusy('');
   }
   /** Encerra a sessão local e volta ao login, com aviso não-técnico opcional. */
   function endSession(reason=''){resetSessionState();setSession(null);setAccessNotice(reason);}
@@ -280,25 +326,33 @@ export default function App(){
   async function openPatient(p:Patient){
     if(!token)return;
     setPatient(p);setEncounter(null);setNote(null);setAddenda([]);setSections({});setView('record');
+    resetBreakGlass();
     try {
-      const [visits,allergyRecords,problemRecords]=await Promise.all([
-        api<Encounter[]>('/encounters?patientId='+encodeURIComponent(p.id),token),
-        api<PatientAllergy[]>('/patients/'+p.id+'/allergies',token),
-        api<PatientProblem[]>('/patients/'+p.id+'/problems',token)
-      ]);
-      setEncounters(visits);setAllergies(allergyRecords);setProblems(problemRecords);
+      // GET /encounters?patientId=, /patients/:id/allergies e /patients/:id/problems são rotas
+      // de carregamento sujeitas a403 break-glass: o loader é repetido com o header no retry.
+      await runRecordLoad(async headers=>{
+        const [visits,allergyRecords,problemRecords]=await Promise.all([
+          api<Encounter[]>('/encounters?patientId='+encodeURIComponent(p.id),token,'GET',undefined,headers),
+          api<PatientAllergy[]>('/patients/'+p.id+'/allergies',token,'GET',undefined,headers),
+          api<PatientProblem[]>('/patients/'+p.id+'/problems',token,'GET',undefined,headers)
+        ]);
+        setEncounters(visits);setAllergies(allergyRecords);setProblems(problemRecords);
+      });
     }catch(e){alert((e as Error).message,'error');}
   }
   async function openEncounter(e:Encounter){
     if(!token)return;
     setEncounter(e);setSpecialty((e.specialty in specialties?e.specialty:'general') as Specialty);
+    resetBreakGlass();
     try {
-      const [current,history]=await Promise.all([
-        api<ClinicalNote|null>('/encounters/'+e.id+'/notes',token),
-        api<ClinicalAddendum[]>('/encounters/'+e.id+'/addenda',token)
-      ]);
-      setNote(current);setSections(current?.content?.sections??{});setAddenda(history);
-      setAddendumReason('');setAddendumContent('');
+      // GET /encounters/:id/notes é rota de carregamento sujeita a403 break-glass; roda antes
+      // dos adendos para que a recusa de break-glass nunca seja mascarada por outra rejeição.
+      await runRecordLoad(async headers=>{
+        const current=await api<ClinicalNote|null>('/encounters/'+e.id+'/notes',token,'GET',undefined,headers);
+        const history=await api<ClinicalAddendum[]>('/encounters/'+e.id+'/addenda',token,'GET',undefined,headers);
+        setNote(current);setSections(current?.content?.sections??{});setAddenda(history);
+        setAddendumReason('');setAddendumContent('');
+      });
     } catch(err){alert((err as Error).message,'error');}
   }
   /** Seleciona o paciente para a tela de Prescrições SEM abandonar a view atual.
@@ -325,9 +379,10 @@ export default function App(){
     setLoading(true);
     try {
       await api('/patients/'+patient.id+'/allergies',token,'POST',allergyForm);
-      setAllergies(await api<PatientAllergy[]>('/patients/'+patient.id+'/allergies',token));
       setAllergyForm({substance:'',reaction:'',criticality:'unable-to-assess',verificationStatus:'unconfirmed'});
       alert('Alergia documentada. Verifique o estado de confirmação.','success');
+      // GET /patients/:id/allergies — rota de prontuário:403 break-glass abre o painel de emergência.
+      await runRecordLoad(async headers=>{setAllergies(await api<PatientAllergy[]>('/patients/'+patient.id+'/allergies',token,'GET',undefined,headers));});
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
   }
   async function createProblem(e:FormEvent){
@@ -338,9 +393,10 @@ export default function App(){
       const payload={display:problemForm.display,verificationStatus:problemForm.verificationStatus,
         ...(problemForm.code&&problemForm.codeSystem?{code:problemForm.code,codeSystem:problemForm.codeSystem}:{})};
       await api('/patients/'+patient.id+'/problems',token,'POST',payload);
-      setProblems(await api<PatientProblem[]>('/patients/'+patient.id+'/problems',token));
       setProblemForm({display:'',codeSystem:'',code:'',verificationStatus:'provisional'});
       alert('Problema clínico documentado.','success');
+      // GET /patients/:id/problems — rota de prontuário:403 break-glass abre o painel de emergência.
+      await runRecordLoad(async headers=>{setProblems(await api<PatientProblem[]>('/patients/'+patient.id+'/problems',token,'GET',undefined,headers));});
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
   }
   async function createEncounter(e:FormEvent){
@@ -411,6 +467,37 @@ export default function App(){
       await loadLists(session);alert('Agendamento criado.','success');
     }catch(err){alert((err as Error).message,'error');}
   }
+  /** ST-P1-011 — PATCH /appointments/:id/status {status,reason?} → {id,status,scheduled_at,kind}.
+   *  Transições: scheduled→checked_in|cancelled|no_show; checked_in→completed|cancelled.
+   *  403 (papel) /409 (transição inválida) /404 (inexistente) viram mensagens amigáveis. */
+  async function updateAppointmentStatus(a:Appointment,status:'checked_in'|'completed'|'cancelled'|'no_show',reason?:string){
+    if(!token||!session)return;
+    setApptBusy(a.id);
+    try{
+      const updated=await api<{id:string;status:string;scheduled_at:string;kind:string}>(
+        '/appointments/'+a.id+'/status',token,'PATCH',reason?{status,reason}:{status});
+      setAppointments(list=>list.map(x=>x.id===a.id
+        ?{...x,status:updated.status,scheduled_at:updated.scheduled_at,kind:updated.kind}
+        :x));
+      setCancelTarget('');setCancelReason('');
+      const done={checked_in:'Check-in registrado.',completed:'Atendimento concluído.',
+        cancelled:'Agendamento cancelado.',no_show:'Marcado como não compareceu.'} as const;
+      alert(done[status],'success');
+    }catch(err){
+      const e=err as ApiError;
+      if(e.status===403){
+        alert('Seu papel não tem permissão para esta operação na agenda. Peça a um administrador ou a um profissional habilitado.','error');
+      }else if(e.status===409){
+        alert('Transição não permitida: este compromisso já mudou de situação. A lista foi atualizada — confira e tente novamente.','error');
+        void loadLists(session);
+      }else if(e.status===404){
+        alert('Agendamento não encontrado: ele pode ter sido removido. A lista foi atualizada.','error');
+        void loadLists(session);
+      }else{
+        alert((err as Error).message,'error');
+      }
+    }finally{setApptBusy('');}
+  }
   async function createStaff(e:FormEvent){
     e.preventDefault();if(!token||!session)return;
     try{
@@ -448,6 +535,19 @@ export default function App(){
       </header>
       <main className="content">
         {banner&&<div className={'notice '+banner.kind}><span>{banner.kind==='error'?<AlertCircle size={17}/>:<CheckCircle2 size={17}/>}</span><span>{banner.text}</span><button aria-label="Fechar aviso" onClick={()=>setBanner(null)}><X size={17}/></button></div>}
+        {breakGlass&&<div className="panel break-glass-panel" role="dialog" aria-label="Acesso de emergência (break-glass)">
+          <div className="panel-title"><h2>Acesso de emergência • break-glass</h2><LockKeyhole size={19}/></div>
+          <p className="muted">Este prontuário foi bloqueado (403): você não tem vínculo de cuidado com o paciente. Informe o motivo do acesso para prosseguir — <strong>o motivo fica auditado no servidor.</strong></p>
+          <label>Motivo do acesso (mín. 20 caracteres)
+            <textarea rows={3} maxLength={500} value={breakGlassReason} onChange={e=>{setBreakGlassReason(e.target.value);setBreakGlassError('');}} placeholder="Ex.: acolhimento de urgência do paciente, sem vínculo prévio de cuidado"/>
+          </label>
+          <div className="break-glass-meta"><span className="small-pill">{breakGlassReason.trim().length} / 500</span><span className="muted">Mínimo 20 caracteres • fica auditado</span></div>
+          {breakGlassError&&<div className="inline-error" role="alert"><AlertCircle size={16}/>{breakGlassError}</div>}
+          <div className="action-row">
+            <button className="secondary-button" onClick={declineBreakGlass}>Cancelar</button>
+            <button className="primary-button" disabled={breakGlassReason.trim().length<20} onClick={()=>void confirmBreakGlass()}><LockKeyhole size={16}/> Continuar</button>
+          </div>
+        </div>}
         {view==='dashboard'&&<section>
           <div className="hero"><div><span className="eyebrow">PAINEL DE ATENDIMENTO</span><h1>Bom atendimento começa<br/>com informação clara.</h1><p>Bem-vindo ao StarMed. Acompanhe os registros da sua organização.</p><button className="hero-button" onClick={()=>setView('patients')}>Consultar pacientes <ArrowRight size={17}/></button></div><div className="hero-graphic"><div className="pulse-ring"><HeartPulse size={80} strokeWidth={1.2}/></div></div></div>
           <div className="stat-grid"><div className="stat-card"><Users size={20}/><span>Pacientes cadastrados</span><strong>{patients.length}</strong><small>Até 50 resultados na busca atual</small></div><div className="stat-card"><CalendarDays size={20}/><span>Agendamentos exibidos</span><strong>{appointments.length}</strong><small>Últimos 7 dias e futuros</small></div><div className="stat-card"><CloudUpload size={20}/><span>Rascunhos offline</span><strong>{pending}</strong><small>Armazenados neste navegador</small></div></div>
@@ -539,7 +639,34 @@ export default function App(){
         </section>}
         {view==='agenda'&&<section>
           <div className="page-heading"><div><span className="eyebrow">ORGANIZAÇÃO</span><h1>Agenda</h1><p>Registros e novos agendamentos por profissional.</p></div></div>
-          <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Agendamentos</h2></div>{appointments.length===0?<div className="empty-state">Nenhuma consulta agendada.</div>:appointments.map(a=><div className="list-line" key={a.id}><div className="list-icon"><CalendarDays size={18}/></div><div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {a.duration_minutes} min • {a.kind}</small></div><span className="small-pill">{a.status}</span></div>)}</div>
+          <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Agendamentos</h2></div>{appointments.length===0?<div className="empty-state">Nenhuma consulta agendada.</div>:appointments.map(a=>{
+            const busy=apptBusy===a.id;
+            return <div className="list-line" key={a.id}><div className="list-icon"><CalendarDays size={18}/></div>
+              <div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {a.duration_minutes} min • {a.kind}</small>
+                {(a.status==='scheduled'||a.status==='checked_in')&&<div className="agenda-actions">
+                  {a.status==='scheduled'&&<button className="text-button" disabled={busy} onClick={()=>{if(window.confirm('Confirmar check-in de '+a.patient_name+'?'))void updateAppointmentStatus(a,'checked_in');}}><CheckCircle2 size={14}/> Check-in</button>}
+                  {a.status==='checked_in'&&<button className="text-button" disabled={busy} onClick={()=>{if(window.confirm('Concluir o atendimento de '+a.patient_name+'?'))void updateAppointmentStatus(a,'completed');}}><ShieldCheck size={14}/> Concluir</button>}
+                  {a.status==='scheduled'&&<button className="text-button" disabled={busy} onClick={()=>{if(window.confirm('Marcar '+a.patient_name+' como não compareceu?'))void updateAppointmentStatus(a,'no_show');}}><AlertCircle size={14}/> Não compareceu</button>}
+                  <button className="text-button agenda-cancel" disabled={busy} onClick={()=>{setCancelTarget(cancelTarget===a.id?'':a.id);setCancelReason('');}}><X size={14}/> Cancelar</button>
+                </div>}
+                {cancelTarget===a.id&&<form className="agenda-cancel-form" onSubmit={ev=>{
+                  ev.preventDefault();
+                  const reason=cancelReason.trim();
+                  if(reason.length<5){alert('Informe o motivo do cancelamento com pelo menos 5 caracteres.','error');return;}
+                  if(window.confirm('Confirmar o cancelamento do agendamento de '+a.patient_name+'?'))void updateAppointmentStatus(a,'cancelled',reason);
+                }}>
+                  <label>Motivo do cancelamento (mín. 5 caracteres)
+                    <input value={cancelReason} onChange={ev=>setCancelReason(ev.target.value)} minLength={5} maxLength={500} placeholder="Ex.: paciente desistiu, reagendamento solicitado"/>
+                  </label>
+                  <div className="agenda-cancel-buttons">
+                    <button type="submit" className="secondary-button" disabled={busy||cancelReason.trim().length<5}>Confirmar cancelamento</button>
+                    <button type="button" className="text-button" onClick={()=>{setCancelTarget('');setCancelReason('');}}>Voltar</button>
+                  </div>
+                </form>}
+              </div>
+              <span className="small-pill">{a.status}</span>
+            </div>;
+          })}</div>
             <div className="panel"><div className="panel-title"><h2>Novo agendamento</h2><Plus size={20}/></div><form className="stack gap-4" onSubmit={createAppointment}>
               <label>Paciente<select required value={appForm.patientId} onChange={e=>setAppForm({...appForm,patientId:e.target.value})}><option value="">Selecione</option>{patients.map(p=><option key={p.id} value={p.id}>{p.fullName}</option>)}</select></label>
               <label>Profissional<select required value={appForm.practitionerId} onChange={e=>setAppForm({...appForm,practitionerId:e.target.value})}><option value="">Selecione</option>{staff.filter(s=>s.role==='doctor').map(s=><option key={s.id} value={s.id}>{s.displayName}</option>)}{isDoctor&&!staff.some(s=>s.id===user!.id)&&<option value={user!.id}>Meu usuário</option>}</select></label>

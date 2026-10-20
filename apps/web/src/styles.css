@@ -81,3 +81,14 @@
 .rx-hash{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10px;color:#5b7885;overflow-wrap:anywhere}
 .rx-sign-status{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#17806f;background:#effaf7;border:1px solid #d3ede6;border-radius:9px;padding:9px 12px;margin:10px 0 0}
 @media(max-width:720px){.rx-grid{grid-template-columns:1fr}}
+/* Break-glass (P0-05): painel de acesso de emergência acima da área de conteúdo. */
+.break-glass-panel{border-color:#e7c08a;box-shadow:0 7px 22px #b97e261f;margin-bottom:19px}
+.break-glass-panel .panel-title h2{color:#8a5a17}
+.break-glass-panel p{margin-bottom:12px}
+.break-glass-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:8px}
+/* Agenda (ST-P1-011): ações contextuais e cancelamento com motivo inline na linha do compromisso. */
+.agenda-actions{display:flex;align-items:center;flex-wrap:wrap;gap:14px;margin-top:9px}
+.agenda-actions .text-button.agenda-cancel{color:#ac5149}
+.agenda-cancel-form{display:flex;flex-direction:column;gap:10px;margin-top:11px;padding-top:11px;border-top:1px dashed #e3ecef}
+.agenda-cancel-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+@media(max-width:720px){.agenda-actions{gap:10px}.agenda-cancel-buttons{flex-direction:column;align-items:stretch}.agenda-cancel-buttons .text-button{justify-content:center}}

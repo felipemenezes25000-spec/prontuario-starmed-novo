@@ -22,10 +22,13 @@ export class ApiError extends Error{
    *  medicamentosa (409/422 em POST /prescriptions/:id/sign), que a mensagem sozinha descarta. */
   constructor(public status:number,message:string,public body?:unknown){super(message);}
 }
-export async function api<T>(path:string,token:string|null,method='GET',body?:unknown):Promise<T>{
+/** `headers` (5º parâmetro, opcional/aditivo): sobrescreve headers por chamada — usado pelo
+ *  break-glass (P0-05) para enviar `X-Break-Glass-Reason` ao repetir uma leitura de prontuário
+ *  que o backend recusou com 403. Call sites existentes permanecem intactos. */
+export async function api<T>(path:string,token:string|null,method='GET',body?:unknown,headers?:Record<string,string>):Promise<T>{
   const response=await fetch(base+path,{
     method,cache:'no-store',headers:{
-      'Content-Type':'application/json', ...(token?{Authorization:'Bearer '+token}:{})
+      'Content-Type':'application/json', ...(token?{Authorization:'Bearer '+token}:{}), ...headers
     },
     body:body===undefined?undefined:JSON.stringify(body)
   });

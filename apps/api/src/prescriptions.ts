@@ -5,7 +5,8 @@ import { Db } from './db';
 import { parse, uuid } from './domain';
 import { Actor, audit, QueryRunner, requireCareContext, requireRole } from './security';
 import { loadPolicy } from './pki/policy';
-import { signPades } from './pki/pades';
+import { signPades, verifyPades } from './pki/pades';
+import { embedSignature, readEmbeddedSignature, reserveSignatureSpace, verifyEmbeddedSignature } from './pki/pades-embed';
 import { requestTimestamp, tsaConfigFromEnv, TsaError } from './pki/tsa';
 import { TrustStore, TrustStoreError } from './pki/trust-store';
 import { validateChain } from './pki/chain';
@@ -256,8 +257,8 @@ export function buildPrescriptionPdf(input: PrescriptionPdfInput): Buffer {
   push(`Emitido em: ${input.signedAt}`);
   push(`Identificador SHA-256 dos dados: ${input.payloadSha256}`);
   push('Status na emissão: ATESTADO - PDF gerado, persistido e hasheado no servidor.', 11);
-  push('Assinatura digital PAdES (ICP-Brasil): registrada em etapa SEPARADA no servidor (evidência CMS).', 10);
-  push('Esta folha NÃO embute a assinatura (embarque ByteRange pendente) e, isolada, NÃO constitui assinatura qualificada.', 10);
+  push('Assinatura digital PAdES (ICP-Brasil): etapa SEPARADA, embarcada neste arquivo com ByteRange (ver POST /prescriptions/:id/sign-pades).', 10);
+  push('Sem a etapa PAdES, esta folha NÃO constitui assinatura qualificada.', 10);
 
   const pages: PdfLine[][] = [];
   for (let i = 0; i < lines.length; i += LINES_PER_PAGE) pages.push(lines.slice(i, i + LINES_PER_PAGE));
@@ -710,10 +711,19 @@ export class PrescriptionsController {
       }
     }
 
-    // 6) Assinatura CMS/PAdES sobre os bytes do PDF (chave privada só em memória,
-    //    nunca persistida — KMS/HSM é a evolução declarada do MVP).
+    // 6) EMBARQUE PAdES (ByteRange, C6/J1 #10): o layout reserva o espaço e grava
+    //    o ByteRange REAL antes do assinamento; o CMS cobre os bytes FORA do
+    //    buraco (o que o verificador recalcula). Ver pades-embed.ts.
+    const reserved = reserveSignatureSpace(pdf);
+    const geometry = readEmbeddedSignature(reserved);
+    if (!geometry)
+      throw new InternalServerErrorException('Falha ao preparar o espaço de assinatura do PDF (ByteRange)');
+    const bytesToSign = Buffer.concat([
+      reserved.subarray(0, geometry.byteRange[1]),
+      reserved.subarray(geometry.byteRange[2], geometry.byteRange[3])
+    ]);
     const signed = await signPades({
-      content: pdf,
+      content: bytesToSign,
       signerCertPem: body.signerCertPem,
       chainPems: body.chainPems,
       privateKeyPkcs8Pem: body.privateKeyPkcs8Pem,
@@ -723,6 +733,8 @@ export class PrescriptionsController {
       policy,
       timestampTokenDer
     });
+    const embeddedPdf = embedSignature(reserved, signed.cms);
+    const embeddedSha256 = createHash('sha256').update(embeddedPdf).digest('hex');
     const contentDigest = signed.digestSha256.toString('hex');
     const hasItiOids = documentTypeOid('prescription').startsWith(OIDS.POLICY_ARC + '.');
     // qualified=true SÓ se o carimbo entrou no CMS (tri-estado — nunca "assinatura válida").
@@ -761,10 +773,18 @@ export class PrescriptionsController {
           WHERE id=$1 AND org_id=$2 AND status='signed' RETURNING id, signature_status`,
         [id, actor.org_id]);
       if (!transition.rowCount) throw new ConflictException('Prescrição deixou de estar atestada durante a assinatura PAdES');
+      // O PDF EMBUTIDO (com /Contents preenchido) substitui o atestado na mesma
+      // transação: content + sha256 novos — GET /:id/pdf re-hasheia e bate.
+      if (row.signed_document_id) {
+        await c.query(
+          'UPDATE clinical_documents SET content=$3, sha256=$4 WHERE id=$1 AND org_id=$2',
+          [row.signed_document_id, actor.org_id, embeddedPdf, embeddedSha256]);
+      }
       await audit(c, actor, 'prescription.signed.pades', 'prescription', id, {
         signatureId: record.id,
         documentType: 'prescription',
         contentDigest,
+        documentSha256: embeddedSha256,
         policyOid: signed.policyOid,
         timestampAuthority,
         signatureIsQualified,
@@ -777,6 +797,7 @@ export class PrescriptionsController {
         signatureId: record.id,
         documentType: 'prescription',
         contentDigest,
+        documentSha256: embeddedSha256,
         policyOid: signed.policyOid,
         timestampAuthority,
         signatureIsQualified,
@@ -784,12 +805,50 @@ export class PrescriptionsController {
         signer: { id: actor.id, councilNumber: body.councilNumber, councilState: body.councilState },
         revocation,
         padesEmbedding: {
-          embedded: false,
-          reason: 'pki/pades.ts emite CMS DETACHED: o embarque PAdES no PDF (ByteRange) segue PENDENTE — este PDF não carrega a assinatura embutida; a evidência (CMS) vive em document_signatures, ao lado do documento.'
+          embedded: true,
+          byteRange: geometry.byteRange,
+          verifiedWith: 'POST /prescriptions/:id/verify-pades (ByteRange + CMS sobre os bytes externos ao buraco; 1 byte alterado invalida — J1 #10)'
         },
-        note: 'Evidência PAdES registrada e signature_status="pades". Isto NÃO é "assinatura válida" auto-declarada: a validação oficial (verificador do ITI) continua externa ao StarMed.',
+        note: 'Assinatura PAdES embarcada no PDF (ByteRange) e signature_status="pades". Isto NÃO é "assinatura válida" auto-declarada: a validação oficial (verificador do ITI) continua externa ao StarMed.',
         createdAt: record.created_at
       };
     });
+  }
+
+  /** Verificação da assinatura EMBUTIDA (J1 #10): geometria do ByteRange + CMS
+   *  sobre os bytes externos ao buraco — adulterar 1 byte fora do buraco
+   *  invalida a verificação; adulterar o buraco/geometria também. Resposta
+   *  honesta em qualquer caso (nunca "válida" auto-declarada; o validador
+   *  oficial do ITI continua sendo a referência externa). */
+  @Post(':id/verify-pades')
+  async verifyEmbedded(@Req() req: ReqWithActor, @Param('id') rawId: string) {
+    const actor = req.actor;
+    requireRole(actor, ['doctor', 'nurse']);
+    const id = parse(uuid, rawId);
+    const loaded = await this.db.query<any>(
+      'SELECT signed_document_id FROM prescriptions WHERE id=$1 AND org_id=$2', [id, actor.org_id]);
+    if (!loaded.rowCount) throw new NotFoundException('Prescrição não encontrada');
+    const pdf = await loadSignedPrescriptionPdf(this.db, loaded.rows[0].signed_document_id, actor.org_id);
+    const outcome = await verifyEmbeddedSignature(pdf, (cms, signedBytes) => verifyPades(cms, signedBytes));
+    const checkedAt = new Date().toISOString();
+    await audit(this.db, actor, 'prescription.pades.verified', 'prescription', id, { ok: outcome.ok });
+    if (!outcome.ok)
+      return { prescriptionId: id, byteRangeOk: false, tamperSuspect: true, reason: outcome.reason, checkedAt };
+    const v = outcome.result;
+    const qualification = qualifySignature(
+      v.timestampPresent === true,
+      typeof v.policyOid === 'string' ? v.policyOid.startsWith(OIDS.POLICY_ARC + '.') : null);
+    return {
+      prescriptionId: id,
+      byteRangeOk: true,
+      byteRange: outcome.byteRange,
+      signatureValid: v.signatureValid === true,
+      qualification: qualification === true ? 'qualified' : qualification === false ? 'not_qualified' : 'unknown',
+      policyOid: v.policyOid ?? null,
+      timestampPresent: v.timestampPresent === true,
+      tamperSuspect: v.signatureValid !== true,
+      checkedAt,
+      note: 'Verificação local sobre os bytes embutidos (ByteRange/CMS); a validação oficial permanece no verificador do ITI.'
+    };
   }
 }

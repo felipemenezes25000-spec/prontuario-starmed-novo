@@ -9,6 +9,7 @@ import { TrustStore, TrustStoreError } from './trust-store';
 import { validateChain } from './chain';
 import { loadPolicy } from './policy';
 import { verifyPades, signPades } from './pades';
+import { reserveSignatureSpace, embedSignature, readEmbeddedSignature, verifyEmbeddedSignature } from './pades-embed';
 import { TsaError, buildTimeStampReq, requestTimestamp, tsaConfigFromEnv } from './tsa';
 import { isIcpBrasilPolicy, OIDS } from './iti-oids';
 import { buildTestPki, fakeTsa, httpStub, pem, pkcs8Pem, type TestPki } from './test-pki';
@@ -284,5 +285,85 @@ describe('políticas do arco ICP-Brasil', () => {
     const rows = manifest.trim().split('\n').slice(1);
     assert.equal(rows.length, 6);
     for (const row of rows) assert.match(row, /acraiz\.icpbrasil\.gov\.br/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Embarque PAdES (ByteRange) — pades-embed.ts (J1 #10)
+// ---------------------------------------------------------------------------
+
+/** Mini-PDF sintético no MESMO formato do builder de prescrições (xref clássico). */
+function miniPdf(): Buffer {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    '<< /Length 0 >>\nstream\nendstream',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (let i = 0; i < objects.length; i++) {
+    offsets[i] = Buffer.byteLength(pdf, 'latin1');
+    pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'latin1');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) pdf += `${String(o).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+describe('embarque PAdES em PDF (ByteRange)', () => {
+  test('round-trip reserve → embed → read com geometria cobrindo o arquivo', () => {
+    const reserved = reserveSignatureSpace(miniPdf(), 4096);
+    const geometry = readEmbeddedSignature(reserved);
+    assert.ok(geometry, 'reserva legível');
+    assert.equal(geometry.byteRange[0], 0);
+    assert.equal(geometry.byteRange[3], reserved.length, 'B termina no fim do arquivo');
+    assert.equal(reserved[geometry.byteRange[1]], 0x3c, 'início do buraco é <');
+    assert.equal(reserved[geometry.byteRange[2] - 1], 0x3e, 'fim do buraco é >');
+    // /AcroForm e widget presentes (campo de assinatura invisível).
+    assert.ok(reserved.toString('latin1').includes('/AcroForm'));
+    assert.ok(reserved.toString('latin1').includes('/FT /Sig'));
+
+    const cms = Buffer.from([0x30, 0x00]); // DER: SEQUENCE vazia
+    const embedded = embedSignature(reserved, cms);
+    assert.equal(embedded.length, reserved.length, 'embed não muda o tamanho');
+    const read = readEmbeddedSignature(embedded);
+    assert.ok(read, 'embebido legível');
+    assert.deepEqual(read.byteRange, geometry.byteRange, 'ByteRange preservado');
+    assert.deepEqual(read.cms, cms, 'CMS round-trip íntegro (padding removido)');
+  });
+
+  test('CMS grande demais para a reserva é recusado', () => {
+    const reserved = reserveSignatureSpace(miniPdf(), 2048);
+    assert.throws(() => embedSignature(reserved, Buffer.alloc(1024)), /excede a reserva/);
+  });
+
+  test('1 byte fora do buraco invalida a verificação (J1 #10)', async () => {
+    const reserved = reserveSignatureSpace(miniPdf(), 4096);
+    const embedded = embedSignature(reserved, Buffer.from([0x30, 0x00]));
+    const intact = await verifyEmbeddedSignature(embedded, async (_cms, signed) =>
+      ({ signatureValid: signed.subarray(0, 5).toString('latin1') === '%PDF-' }));
+    assert.equal(intact.ok, true);
+    assert.equal((intact as { ok: true; result: { signatureValid: boolean } }).result.signatureValid, true);
+
+    const tampered = Buffer.from(embedded);
+    tampered[10] ^= 0x01; // byte ANTES do buraco
+    const outcome = await verifyEmbeddedSignature(tampered, async (_cms, signed) =>
+      ({ signatureValid: signed.subarray(0, 5).toString('latin1') === '%PDF-' }));
+    assert.equal(outcome.ok, true, 'geometria continua válida');
+    assert.equal((outcome as { ok: true; result: { signatureValid: boolean } }).result.signatureValid, false,
+      'o CMS/deveria não confere com o arquivo adulterado');
+  });
+
+  test('ByteRange adulterado (geometria) → verificação recusada', async () => {
+    const reserved = reserveSignatureSpace(miniPdf(), 4096);
+    const embedded = embedSignature(reserved, Buffer.from([0x30, 0x00]));
+    const broken = Buffer.from(embedded.toString('latin1').replace('/ByteRange [0000000000', '/ByteRange [0000000001'), 'latin1');
+    const outcome = await verifyEmbeddedSignature(broken, async () => ({ signatureValid: true }));
+    assert.equal(outcome.ok, false);
+    if (!outcome.ok) assert.match(outcome.reason, /geometria inválida/);
   });
 });

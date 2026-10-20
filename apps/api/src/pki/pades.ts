@@ -4,6 +4,7 @@ import * as pkijs from 'pkijs';
 import { CTYPE_ID_DATA, CMS_ATTR, DocumentType, documentTypeOid } from './iti-oids';
 import { LoadedPolicy } from './policy';
 import { toArrayBuffer } from './buffer';
+import { normalizeCertificatePem } from './pem';
 
 /**
  * Assinatura CMS/PAdES detached (PKCS#7/CMS, SHA-256) sobre documentos clínicos,
@@ -101,13 +102,13 @@ function buildSignedAttributes(params: {
 }
 
 export async function signPades(params: PadesSignParams): Promise<PadesSignResult> {
-  const leaf = new X509Certificate(params.signerCertPem);
+  const leaf = new X509Certificate(normalizeCertificatePem(params.signerCertPem));
   const certDer = leaf.raw;
   const contentDigest = createHash('sha256').update(params.content).digest();
 
   const privateKey = await importPrivateKey(params.privateKeyPkcs8Pem);
   const certificates: pkijs.Certificate[] = [pkijs.Certificate.fromBER(toArrayBuffer(certDer))];
-  for (const pem of params.chainPems) certificates.push(pkijs.Certificate.fromBER(toArrayBuffer(new X509Certificate(pem).raw)));
+  for (const pem of params.chainPems) certificates.push(pkijs.Certificate.fromBER(toArrayBuffer(new X509Certificate(normalizeCertificatePem(pem)).raw)));
 
   const signedData = new pkijs.SignedData({
     encapContentInfo: new pkijs.EncapsulatedContentInfo({ eContentType: CTYPE_ID_DATA }),

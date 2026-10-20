@@ -13,6 +13,7 @@ import { reserveSignatureSpace, embedSignature, readEmbeddedSignature, verifyEmb
 import { TsaError, buildTimeStampReq, requestTimestamp, tsaConfigFromEnv } from './tsa';
 import { isIcpBrasilPolicy, OIDS } from './iti-oids';
 import { buildTestPki, fakeTsa, httpStub, pem, pkcs8Pem, type TestPki } from './test-pki';
+import { normalizeCertificatePem } from './pem';
 import { toArrayBuffer } from './buffer';
 
 const ROOTS_DIR = resolve(__dirname, '..', '..', '..', '..', 'certs', 'icp-brasil', 'roots');
@@ -39,6 +40,47 @@ describe('trust store ICP-Brasil', () => {
     assert.ok(store.has(real));
     const forged = new X509Certificate(Buffer.from(real.toString())); // cópia idêntica → mesmo fingerprint
     assert.ok(store.has(forged));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regressão do flaky "carimbo de ACT" (duas causas raiz encontradas em 21/10/2026):
+//  1) serial INTEGER não-mínimo no gerador de teste (fixo em positiveMinimalIntegerBytes);
+//  2) pem() emitindo linha VAZIA antes de -----END CERTIFICATE----- quando o base64
+//     tem múltiplo de 64 chars — OpenSSL (Node 22/24) rejeita com "wrong tag".
+// Ambas eram aleatórias (comprimento do DER variava com CN/serial/SPKI) e derrubavam
+// ~1 em 10 execuções da suíte.
+// ---------------------------------------------------------------------------
+describe('formatação PEM (regressão de flaky)', () => {
+  test('pem() nunca emite linha vazia, mesmo com base64 múltiplo de 64 chars', () => {
+    // 48 bytes → base64 exatamente 64 chars → o bug antigo inseria '\n' duplo antes do END.
+    const synthetic = { der: Buffer.alloc(48, 0x41) };
+    const out = pem(synthetic);
+    assert.ok(!out.includes('\n\n'), 'nenhuma linha vazia no PEM');
+    assert.ok(out.endsWith('-----END CERTIFICATE-----\n'));
+    const bodyLines = out.split('\n').slice(1, -2);
+    assert.ok(bodyLines.length >= 1 && bodyLines.every((l) => l.length <= 64 && l.length > 0));
+  });
+
+  test('pem() round-trip: raiz oficial serializa e parseia com mesmo fingerprint', () => {
+    const store = TrustStore.fromDirectory(ROOTS_DIR);
+    const real = store.certs[0];
+    const round = new X509Certificate(pem({ der: real.raw }));
+    assert.equal(round.fingerprint256, real.fingerprint256);
+  });
+
+  test('normalizeCertificatePem remove linhas vazias e \\r\\n de PEM externo', () => {
+    const store = TrustStore.fromDirectory(ROOTS_DIR);
+    const real = store.certs[0];
+    const messy = real.toString()
+      .split('\n')
+      .flatMap((l, i) => (i > 0 && i % 8 === 0 ? ['', l] : [l]))
+      .join('\r\n');
+    assert.ok(messy.includes('\r\n'), 'fixture tem CRLF e linha vazia');
+    const normalized = normalizeCertificatePem(messy);
+    assert.ok(!normalized.includes('\r\n') && !normalized.includes('\n\n'), 'sem CRLF e sem linha vazia');
+    const parsed = new X509Certificate(normalized);
+    assert.equal(parsed.fingerprint256, real.fingerprint256);
   });
 });
 

@@ -9,6 +9,7 @@ import { signPades, verifyPades } from './pki/pades';
 import { embedSignature, readEmbeddedSignature, reserveSignatureSpace, verifyEmbeddedSignature } from './pki/pades-embed';
 import { requestTimestamp, tsaConfigFromEnv, TsaError } from './pki/tsa';
 import { TrustStore, TrustStoreError } from './pki/trust-store';
+import { normalizeCertificatePem } from './pki/pem';
 import { validateChain } from './pki/chain';
 import { OIDS, documentTypeOid } from './pki/iti-oids';
 import { checkRevocation, revocationModeFromEnv } from './pki/revocation';
@@ -668,7 +669,7 @@ export class PrescriptionsController {
     }
     let presented: X509Certificate[];
     try {
-      presented = [new X509Certificate(body.signerCertPem), ...body.chainPems.map((p) => new X509Certificate(p))];
+      presented = [new X509Certificate(normalizeCertificatePem(body.signerCertPem)), ...body.chainPems.map((p) => new X509Certificate(normalizeCertificatePem(p)))];
     } catch {
       throw new BadRequestException('Certificado ou cadeia PEM ilegível');
     }

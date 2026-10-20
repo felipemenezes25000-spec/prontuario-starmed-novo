@@ -15,10 +15,23 @@ function name(cn: string): pkijs.RelativeDistinguishedNames {
   });
 }
 
-function serialWithPositiveHead(): ArrayBuffer {
+/**
+ * Serial/INTEGER positivo em DER MÍNIMO. `& 0x7f` garante sinal não-negativo, mas
+ * um 0x00 inicial REDUNDANTE (segundo byte < 0x80) torna o INTEGER não-mínimo e o
+ * OpenSSL 3 recusa o certificado inteiro ("PEM routines::no start line" no fallback
+ * de parse do X509Certificate) — era a causa do flaky ~1/10 do "carimbo de ACT":
+ * cada certificado gerado tinha 1/128 de chance de nascer com serial reprovado.
+ * Remove zeros à esquerda redundantes e mantém o 0x00 de preenchimento só quando
+ * necessário (próximo byte ≥ 0x80).
+ */
+function positiveMinimalIntegerBytes(): Uint8Array {
   const bytes = new Uint8Array(randomBytes(8));
-  bytes[0] &= 0x7f;
-  return bytes.buffer as ArrayBuffer;
+  bytes[0] &= 0x7f; // RFC 5280: serial deve ser positivo
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0x00 && bytes[start + 1] < 0x80) start++;
+  const minimal = bytes.slice(start);
+  if (minimal.every(b => b === 0)) minimal[minimal.length - 1] = 0x01; // nunca serial zero
+  return minimal;
 }
 
 async function rsaKeyPair(): Promise<CryptoKeyPair> {
@@ -64,8 +77,7 @@ export async function makeCertificate(opts: {
   const keys = await rsaKeyPair();
   const cert = new pkijs.Certificate();
   cert.version = 2;
-  const serial = new Uint8Array(randomBytes(8));
-  serial[0] &= 0x7f; // RFC 5280: serial deve ser positivo
+  const serial = positiveMinimalIntegerBytes();
   cert.serialNumber = new asn1js.Integer({ valueHex: serial.buffer as ArrayBuffer });
   const issuerCa = opts.issuer;
   cert.issuer = issuerCa ? issuerCa.cert.subject : name(opts.subjectCn);
@@ -104,7 +116,12 @@ export async function buildTestPki(): Promise<TestPki> {
 }
 
 export function pem(cert: { der: Buffer }): string {
-  const body = cert.der.toString('base64').replace(/(.{64})/g, '$1\n');
+  // `.replace(/\n+$/,'')` é essencial: sem ele, quando o base64 tem múltiplo de 64
+  // chars o corpo termina com '\n' e o template acrescenta outro → LINHA VAZIA
+  // antes do END, que o OpenSSL (Node 22/24) rejeita com "wrong tag" — causa
+  // determinística do flaky ~1/10 (o comprimento do DER variava com CN/serial/
+  // SPKI e caía nesse caso ~1 em N runs).
+  const body = cert.der.toString('base64').replace(/(.{64})/g, '$1\n').replace(/\n+$/, '');
   return `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
 }
 
@@ -134,7 +151,7 @@ export async function fakeTsa(tsq: Buffer, opts?: {
     version: 1,
     policy,
     messageImprint: req.messageImprint,
-    serialNumber: new asn1js.Integer({ valueHex: serialWithPositiveHead() }),
+    serialNumber: new asn1js.Integer({ valueHex: positiveMinimalIntegerBytes().buffer as ArrayBuffer }),
     genTime: new Date(),
     nonce: opts?.nonceOverride ? new asn1js.Integer({ valueHex: new Uint8Array(opts.nonceOverride).buffer as ArrayBuffer }) : req.nonce
   });

@@ -1,6 +1,7 @@
 import { X509Certificate } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { normalizeCertificatePem } from './pem';
 
 /**
  * Trust store ICP-Brasil para assinatura clínica.
@@ -16,7 +17,7 @@ export class TrustStore {
 
   constructor(pems: string[], source = 'memória') {
     for (const pem of pems) {
-      const cert = new X509Certificate(pem);
+      const cert = new X509Certificate(normalizeCertificatePem(pem));
       const fp = cert.fingerprint256;
       if (!this.byFingerprint.has(fp)) this.byFingerprint.set(fp, cert);
       const list = this.bySubject.get(cert.subject) ?? [];

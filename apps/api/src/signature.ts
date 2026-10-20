@@ -7,6 +7,7 @@ import { Actor, audit, Public, requireRole, setOrgContext } from './security';
 import { signPades, verifyPades } from './pki/pades';
 import { TsaFailureCategory, TsaError, requestTimestamp, tsaConfigFromEnv } from './pki/tsa';
 import { TrustStore, TrustStoreError } from './pki/trust-store';
+import { normalizeCertificatePem } from './pki/pem';
 import { validateChain } from './pki/chain';
 import { loadPolicy } from './pki/policy';
 import { checkRevocation, revocationModeFromEnv } from './pki/revocation';
@@ -143,7 +144,7 @@ export class SignatureController {
     }
     let presented: X509Certificate[];
     try {
-      presented = [new X509Certificate(body.signerCertPem), ...body.chainPems.map((p) => new X509Certificate(p))];
+      presented = [new X509Certificate(normalizeCertificatePem(body.signerCertPem)), ...body.chainPems.map((p) => new X509Certificate(normalizeCertificatePem(p)))];
     } catch {
       throw new BadRequestException('Certificado ou cadeia PEM ilegível');
     }

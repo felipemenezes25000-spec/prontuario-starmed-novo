@@ -338,7 +338,8 @@ describe('embarque PAdES em PDF (ByteRange)', () => {
 
   test('CMS grande demais para a reserva é recusado', () => {
     const reserved = reserveSignatureSpace(miniPdf(), 2048);
-    assert.throws(() => embedSignature(reserved, Buffer.alloc(1024)), /excede a reserva/);
+    // 1025 bytes = 2050 hex chars > reserva de 2048 → recusado.
+    assert.throws(() => embedSignature(reserved, Buffer.alloc(1025)), /excede a reserva/);
   });
 
   test('1 byte fora do buraco invalida a verificação (J1 #10)', async () => {
@@ -350,7 +351,7 @@ describe('embarque PAdES em PDF (ByteRange)', () => {
     assert.equal((intact as { ok: true; result: { signatureValid: boolean } }).result.signatureValid, true);
 
     const tampered = Buffer.from(embedded);
-    tampered[10] ^= 0x01; // byte ANTES do buraco
+    tampered[2] ^= 0x01; // byte ANTES do buraco (dentro do cabeçalho %PDF)
     const outcome = await verifyEmbeddedSignature(tampered, async (_cms, signed) =>
       ({ signatureValid: signed.subarray(0, 5).toString('latin1') === '%PDF-' }));
     assert.equal(outcome.ok, true, 'geometria continua válida');

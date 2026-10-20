@@ -121,9 +121,10 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     env:
-      # Credenciais EXCLUSIVAMENTE sintéticas e exclusivas deste job.
+      # Credenciais EXCLUSIVAMENTE sintéticas e exclusivas deste job (literal já
+      # conhecido do job api — nada real é assinado com ele).
       DATABASE_URL: postgres://starmed:starmed_e2e@127.0.0.1:5432/starmed_e2e
-      AUTH_SECRET: ci-e2e-secret-0123456789abcdef0123456789abcdef0123
+      AUTH_SECRET: ci-only-secret-0123456789abcdef0123456789abcdef0123
       AUTH_ISSUER: starmed-ci
       AUTH_AUDIENCE: starmed-api-ci
       STARMED_TEST_DB: "true"

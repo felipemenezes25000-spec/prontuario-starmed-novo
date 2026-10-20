@@ -78,4 +78,12 @@ regexes = [
 
   # Constante de teste: base64 de "this is a valid refresh token". Não abre nada.
   '''dGhpcyBpcyBhIHZhbGlkIHJlZnJlc2ggdG9rZW4''',
+
+  # Senha dos médicos SINTÉTICOS do E2E (tests/e2e/helpers.ts): usuários criados
+  # com e-mail @example.invalid em banco DESCARTÁVEL (guard STARMED_TEST_DB=true);
+  # não acessa nada fora do job E2E — é código de teste, não credencial real.
+  # A regra `generic-api-key` casa por entropia do literal (findings #1 do run
+  # 39514881083); mesmo racional dos placeholders acima: literal exato, e um
+  # segredo de verdade no mesmo arquivo continua sendo acusado.
+  '''E2e-Doctor-P4ssw0rd-2026''',
 ]

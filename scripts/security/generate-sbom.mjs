@@ -175,10 +175,13 @@ function collectDotnet() {
   }
 }
 
-collectNpm(join(root, 'package-lock.json'), 'root', false);
-collectNpm(join(root, 'frontend-web', 'package-lock.json'), 'frontend-web');
-collectNpm(join(root, 'frontend-mobile', 'package-lock.json'), 'frontend-mobile');
-collectDotnet();
+// StarMed é um monorepo npm workspaces: o lockfile da RAIZ é a única fonte de
+// verdade (deps de apps/api e apps/web são resolvidas lá). Os locks por workspace
+// e o backend .NET do legado só entram se existirem — nunca são requisito.
+collectNpm(join(root, 'package-lock.json'), 'root', true);
+collectNpm(join(root, 'apps', 'api', 'package-lock.json'), 'apps/api', false);
+collectNpm(join(root, 'apps', 'web', 'package-lock.json'), 'apps/web', false);
+if (existsSync(join(root, 'backend-dotnet'))) collectDotnet();
 
 const sorted = [...components.values()].sort((a, b) =>
   `${a.purl ?? a.name}`.localeCompare(`${b.purl ?? b.name}`));
@@ -193,10 +196,10 @@ const sbom = {
     timestamp,
     component: {
       type: 'application',
-      name: 'RenoveJa+',
+      name: 'StarMed',
       version: process.env.GITHUB_SHA?.slice(0, 12) || 'working-tree',
     },
-    tools: [{ vendor: 'RenoveJa', name: 'scripts/security/generate-sbom.mjs', version: '2' }],
+    tools: [{ vendor: 'StarMed', name: 'scripts/security/generate-sbom.mjs', version: '2' }],
     properties: [
       { name: 'renoveja:git-sha', value: process.env.GITHUB_SHA || 'unknown' },
       { name: 'renoveja:source-count', value: String(new Set(sources).size) },

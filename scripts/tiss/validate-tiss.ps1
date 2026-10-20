@@ -18,7 +18,10 @@ if (-not $SchemaDir) {
 # Resolver local-only: resolve os <include>/<import> dos XSDs apenas por nome de arquivo
 # dentro do próprio diretório de schemas (File.OpenRead). Rede nunca é alcançada —
 # nenhuma confiança nova entra por aqui.
-Add-Type -ReferencedAssemblies @('System.Xml', 'System') -TypeDefinition @'
+# Em .NET (pwsh em Linux/macOS) o tipo System.Xml.XmlResolver é encaminhado para o
+# assembly System.Xml.ReaderWriter — sem referenciá-lo o Add-Type falha com CS1069.
+# Os nomes também existem como facadas no Windows, então serve os dois lados.
+Add-Type -ReferencedAssemblies @('System.Xml', 'System.Xml.ReaderWriter', 'System.Runtime', 'System') -TypeDefinition @'
 public class LocalSchemaResolver : System.Xml.XmlResolver {
   private readonly string _root;
   public LocalSchemaResolver(string root) { _root = root; }

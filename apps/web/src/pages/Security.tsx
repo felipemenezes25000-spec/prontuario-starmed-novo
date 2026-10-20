@@ -198,7 +198,7 @@ export function SecurityPage({session,alert,onMfaDisabled}:{session:Session;aler
               {busy?'Confirmando…':confirmKind==='regen'?'Gerar novos códigos':'Desativar MFA'}</button>
           </div>
         </form>}
-      </div>
+      </div>}
     </div>}
   </section>;
 }

@@ -211,8 +211,15 @@ executadas) + `docs/engineering/MATRIZ_TESTES.md` + ADRs `adr/0001` e `adr/0002`
 · `migrate --dry-run` (20 pendentes) + migração em base limpa ✓ · bootstrap ✓ ·
 smoke ✓ · smoke:mfa ✓ · **E2E Playwright 3/3 ✓** (run limpo, teardown OK).
 
-**Próximo:** push do marco F1 → CI verde (6 jobs) → registrar run
-IDs em `EXECUCAO_2026-10-21.md` → Fase 2 (Prontuário 360°).
+**Marco F1 ACEITO:** push `ee68f44 → 0a67bd9` · CI **6/6 verde** (run `39515333383`:
+API ✓ · Interop ✓ · SCA ✓ · Gitleaks ✓ · Web ✓ · **E2E ✓**) · CodeQL ✓ ·
+check `E2E — Playwright (3 jornadas)` adicionado à proteção de `main` (5 required).
+Run `39514881083` ficou vermelho só no Gitleaks (2 achados sintéticos do E2E) —
+corrigido com allowlist justificado, **nenhum gate desligado**. Run IDs em
+`docs/engineering/EXECUCAO_2026-10-21.md` §0.1.
+
+**Próximo:** Fase 2 (Prontuário 360°: `timeline.ts`/`medications.ts`/`mpi.ts` +
+migração `022` + `Record360.tsx`) na ordem do grafo do PROMPT V3.
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

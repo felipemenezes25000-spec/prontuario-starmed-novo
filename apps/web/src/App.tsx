@@ -1,24 +1,116 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Activity, AlertCircle, ArrowRight, BedDouble, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, HeartPulse, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
-import { api, type Session, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, HeartPulse, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
+import { api, ApiError, EVENT_SESSION_EXPIRED, type LoginResponse, type Session, type User, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
 import { TeleconsultPage, HospitalPage, TemplatesPage, MetricsPage, LgpdPage } from './pages/Fronts';
+import { SecurityPage } from './pages/Security';
 
-type View='dashboard'|'patients'|'record'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd';
+type View='dashboard'|'patients'|'record'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd'|'security';
 type Banner={text:string;kind:'success'|'error'|'info'};
 type Draft={expectedVersion:number;operationId:string;templateId:string;sections:Record<string,string>};
 const mkId=()=>crypto.randomUUID();
 const fmt=(value:string)=>new Date(value).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
 function IconMark(){return <div className="brand-mark"><HeartPulse size={22} strokeWidth={2.5}/></div>;}
-function Access({onLogin}:{onLogin:(session:Session)=>void}){
+/** Erros do login de credenciais em linguagem amigável (401 = dados não reconhecidos). */
+function loginErrorText(e:unknown){
+  if(e instanceof ApiError)
+    return e.status===401?'E-mail ou senha não reconhecidos. Confira os dados e tente novamente.'
+      :(e.message||'Não foi possível concluir o acesso. Tente novamente.');
+  return 'Não foi possível conectar ao StarMed. Verifique sua conexão e tente novamente.';
+}
+/** Erros da etapa MFA (verify/recovery são públicos: 401 aqui é código/token de passo, não sessão). */
+function mfaErrorText(e:unknown,mode:'totp'|'recovery'){
+  if(e instanceof ApiError&&e.status===401)
+    return mode==='recovery'?'Código de recuperação inválido ou já utilizado. Tente outro código ou volte ao início.'
+      :'Código incorreto ou verificação expirada. Confira o aplicativo autenticador ou volte ao início.';
+  if(e instanceof ApiError)return e.message||'Não foi possível concluir a verificação. Tente novamente.';
+  return 'Não foi possível conectar ao StarMed. Verifique sua conexão e tente novamente.';
+}
+/** 409 de /auth/sso/start = SSO não configurado (ou provedor indisponível) → mensagem amigável. */
+function ssoErrorText(e:unknown){
+  if(e instanceof ApiError){
+    if(e.status===409){
+      const base=(e.message||'O acesso corporativo (SSO) não está disponível neste ambiente').replace(/[.\s]+$/,'');
+      return base+'. Entre com seu e-mail e senha.';
+    }
+    return e.message||'Não foi possível iniciar o acesso corporativo. Tente novamente.';
+  }
+  return 'Não foi possível conectar ao StarMed. Verifique sua conexão e tente novamente.';
+}
+function Access({onLogin,notice}:{onLogin:(session:Session)=>void;notice?:string}){
   const [email,setEmail]=useState(''),[password,setPassword]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [stage,setStage]=useState<'credentials'|'mfa'>('credentials');
+  const [mfaMode,setMfaMode]=useState<'totp'|'recovery'>('totp');
+  const [mfaMethods,setMfaMethods]=useState<string[]>(['totp','recovery']);
+  // Token de PASSO do MFA: existe apenas entre /auth/login e /auth/mfa/verify|recovery.
+  // Ele NUNCA vira token de sessão: não entra em Session e nunca vai no header Authorization.
+  const [mfaToken,setMfaToken]=useState('');
+  const [code,setCode]=useState(''),[recoveryCode,setRecoveryCode]=useState('');
+  const totpRef=useRef<HTMLInputElement>(null),recoveryRef=useRef<HTMLInputElement>(null);
+  // Enter avança: cada etapa é um <form>; ao entrar na etapa MFA o foco vai ao campo de código.
+  useEffect(()=>{
+    if(stage!=='mfa')return;
+    const id=window.setTimeout(()=>{(mfaMode==='totp'?totpRef:recoveryRef).current?.focus();},0);
+    return ()=>window.clearTimeout(id);
+  },[stage,mfaMode]);
+  // Retorno do OIDC: /auth/sso/callback redireciona para /auth/callback#access_token=…&user=…
+  useEffect(()=>{
+    if(!window.location.pathname.endsWith('/auth/callback'))return;
+    const raw=window.location.hash.replace(/^#/,'');
+    window.history.replaceState({},'',window.location.pathname+window.location.search);
+    if(!raw)return;
+    const params=new URLSearchParams(raw);
+    const accessToken=params.get('access_token');
+    const userJson=params.get('user');
+    if(accessToken&&userJson){
+      try{onLogin({accessToken,user:JSON.parse(userJson) as User});return;}
+      catch{/* mensagem amigável abaixo */}
+    }
+    // Motivos do provedor podem ser técnicos; o usuário vê uma mensagem amigável.
+    setError('Não foi possível concluir o acesso por SSO. Entre com seu e-mail e senha ou contate o administrador.');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   async function submit(e:FormEvent){
     e.preventDefault();setBusy(true);setError('');
-    try {const session=await api<Session>('/auth/login',null,'POST',{email,password});onLogin(session);}
-    catch(e){setError((e as Error).message);}
+    try{
+      const res=await api<LoginResponse>('/auth/login',null,'POST',{email,password});
+      if(res.mfaRequired&&res.mfaToken){
+        // Sem accessToken aqui: o backend não emite sessão antes do segundo fator.
+        setMfaToken(res.mfaToken);setMfaMethods(res.methods??['totp','recovery']);
+        setMfaMode('totp');
+        setCode('');setRecoveryCode('');setStage('mfa');
+      }else if(res.accessToken&&res.user){
+        onLogin({accessToken:res.accessToken,user:res.user});
+      }else setError('Não foi possível concluir o acesso. Tente novamente.');
+    }catch(e){setError(loginErrorText(e));}
     finally{setBusy(false);}
+  }
+  async function verifyMfa(e:FormEvent){
+    e.preventDefault();if(!mfaToken)return;
+    setBusy(true);setError('');
+    try{
+      const session=await api<Session>(mfaMode==='totp'?'/auth/mfa/verify':'/auth/mfa/recovery',null,'POST',
+        mfaMode==='totp'?{mfaToken,code}:{mfaToken,recoveryCode:recoveryCode.trim()});
+      if(session.accessToken&&session.user){
+        setMfaToken('');setCode('');setRecoveryCode('');
+        onLogin(session);
+      }else setError('Não foi possível concluir o acesso. Tente novamente.');
+    }catch(e){setError(mfaErrorText(e,mfaMode));}
+    finally{setBusy(false);}
+  }
+  async function startSso(){
+    setBusy(true);setError('');
+    try{
+      const r=await api<{authorizationUrl:string}>('/auth/sso/start',null);
+      if(r.authorizationUrl)window.location.assign(r.authorizationUrl);
+      else setError('Não foi possível iniciar o acesso corporativo. Tente novamente.');
+    }catch(e){setError(ssoErrorText(e));}
+    finally{setBusy(false);}
+  }
+  function backToCredentials(){
+    setMfaToken('');setCode('');setRecoveryCode('');setError('');setStage('credentials');
   }
   return <div className="login-layout">
     <div className="login-illustration">
@@ -30,14 +122,35 @@ function Access({onLogin}:{onLogin:(session:Session)=>void}){
       <div className="login-foot"><ShieldCheck size={19}/> Acesso restrito a profissionais autorizados</div>
     </div>
     <div className="login-form-shell"><div className="login-panel">
-      <div className="small-icon"><LockKeyhole size={23}/></div>
-      <h2>Acesse seu ambiente</h2><p>Entre com as credenciais do StarMed.</p>
-      <form onSubmit={submit} className="stack gap-4 mt-8">
-        <label>E-mail institucional<input required type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="voce@instituicao.com.br"/></label>
-        <label>Senha<input required type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Sua senha"/></label>
-        {error&&<div className="inline-error"><AlertCircle size={16}/>{error}</div>}
-        <button disabled={busy} className="primary-button" type="submit">{busy?'Autenticando…':'Entrar no sistema'} <ArrowRight size={18}/></button>
-      </form>
+      <div className="small-icon">{stage==='mfa'?<ShieldCheck size={23}/>:<LockKeyhole size={23}/>}</div>
+      {stage==='credentials'?<>
+        <h2>Acesse seu ambiente</h2><p>Entre com as credenciais do StarMed.</p>
+        {notice&&<div className="notice info" role="status"><AlertCircle size={17}/><span>{notice}</span></div>}
+        <form onSubmit={submit} className="stack gap-4 mt-8">
+          <label>E-mail institucional<input required type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} placeholder="voce@instituicao.com.br"/></label>
+          <label>Senha<input required type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Sua senha"/></label>
+          {error&&<div className="inline-error" role="alert"><AlertCircle size={16}/>{error}</div>}
+          <button disabled={busy} className="primary-button" type="submit">{busy?'Autenticando…':'Entrar no sistema'} <ArrowRight size={18}/></button>
+        </form>
+        <div className="sso-divider"><span>ou</span></div>
+        <button type="button" className="sso-button" disabled={busy} onClick={()=>void startSso()}><Building2 size={17}/> Entrar com acesso corporativo (SSO)</button>
+      </>:<>
+        <h2>Confirme sua identidade</h2>
+        <p>{mfaMode==='totp'?'Informe o código de 6 dígitos do seu aplicativo autenticador.':'Use um dos códigos de recuperação que você salvou ao ativar o MFA.'}</p>
+        <div className="mfa-modes" role="group" aria-label="Método de verificação do segundo fator">
+          <button type="button" className={'mode-button'+(mfaMode==='totp'?' active':'')} aria-pressed={mfaMode==='totp'} onClick={()=>{setMfaMode('totp');setError('');}}>Código do aplicativo</button>
+          {mfaMethods.includes('recovery')&&<button type="button" className={'mode-button'+(mfaMode==='recovery'?' active':'')} aria-pressed={mfaMode==='recovery'} onClick={()=>{setMfaMode('recovery');setError('');}}>Código de recuperação</button>}
+        </div>
+        <form onSubmit={verifyMfa} className="stack gap-4 mt-8">
+          {mfaMode==='totp'
+            ?<label>Código de 6 dígitos<input ref={totpRef} required inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="\d{6}" className="code-input" value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,''))} placeholder="000000"/></label>
+            :<label>Código de recuperação<input ref={recoveryRef} required minLength={8} maxLength={40} autoComplete="one-time-code" className="code-input" value={recoveryCode} onChange={e=>setRecoveryCode(e.target.value)} placeholder="XXXXX-XXXXX"/></label>}
+          {error&&<div className="inline-error" role="alert"><AlertCircle size={16}/>{error}</div>}
+          <button disabled={busy||(mfaMode==='totp'?code.length!==6:recoveryCode.trim().length<8)} className="primary-button" type="submit">
+            {busy?'Verificando…':mfaMode==='totp'?'Verificar e entrar':'Entrar com código de recuperação'} <ArrowRight size={18}/></button>
+        </form>
+        <button type="button" className="text-button mfa-back" onClick={backToCredentials}>Voltar ao acesso com e-mail e senha</button>
+      </>}
       <p className="security-note">Ambiente inicial de desenvolvimento. Não inserir dados reais de pacientes antes da homologação de segurança e privacidade.</p>
     </div></div>
   </div>;
@@ -54,6 +167,7 @@ function Nav({view,onView,role}:{view:View;onView:(v:View)=>void;role:string}){
     {key:'templates',label:'Templates',icon:FileSignature,allowed:role==='doctor'||role==='admin'},
     {key:'metrics',label:'Métricas',icon:Activity,allowed:role==='doctor'||role==='admin'},
     {key:'lgpd',label:'LGPD',icon:ShieldCheck,allowed:true},
+    {key:'security',label:'Segurança',icon:KeyRound,allowed:true},
     {key:'team',label:'Equipe',icon:Stethoscope,allowed:role==='admin'}
   ];
   return <nav className="sidebar-menu">{items.filter(x=>x.allowed).map(x=>{
@@ -93,11 +207,31 @@ export default function App(){
   const [aiResult,setAiResult]=useState<unknown>(null);
   const [loading,setLoading]=useState(false);
   const [serverReady,setServerReady]=useState(false);
+  // Aviso amigável exibido na tela de login (sessão encerrada, MFA desativado…)
+  const [accessNotice,setAccessNotice]=useState('');
   const token=session?.accessToken??null;
   const user=session?.user;
   const isDoctor=user?.role==='doctor';
   const hasUnsavedChanges=!!note && JSON.stringify(sections)!==JSON.stringify(note.content.sections);
   function alert(text:string,kind:Banner['kind']='info'){setBanner({text,kind});}
+  /** Limpa todo o estado clínico/local da sessão (usado em logout e sessão expirada). */
+  function resetSessionState(){
+    setBanner(null);setView('dashboard');
+    setPatients([]);setAppointments([]);setStaff([]);setPatientQuery('');
+    setPatient(null);setEncounters([]);setAllergies([]);setProblems([]);
+    setAllergyForm({substance:'',reaction:'',criticality:'unable-to-assess',verificationStatus:'unconfirmed'});
+    setProblemForm({display:'',codeSystem:'',code:'',verificationStatus:'provisional'});
+    setEncounter(null);setNote(null);setAddenda([]);setAddendumReason('');setAddendumContent('');
+    setSections({});setSpecialty('general');setEncounterType('consultation');setReason('');
+    setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown'});
+    setNewStaff({displayName:'',email:'',role:'doctor',password:''});
+    setAppForm({patientId:'',practitionerId:'',scheduledAt:'',durationMinutes:30,kind:'consultation'});
+    setPassphrase('');setPending(0);setTranscript('');setAiResult(null);setLoading(false);
+  }
+  /** Encerra a sessão local e volta ao login, com aviso não-técnico opcional. */
+  function endSession(reason=''){resetSessionState();setSession(null);setAccessNotice(reason);}
+  /** Entra na sessão limpando avisos/resíduos das telas anteriores. */
+  function startSession(s:Session){setBanner(null);setAccessNotice('');setSession(s);setView('dashboard');}
   async function loadLists(current:Session){
     try {
       const [p,ap,us]=await Promise.all([
@@ -124,6 +258,14 @@ export default function App(){
     return ()=>{disposed=true;window.clearInterval(interval);window.removeEventListener('offline',offline);window.removeEventListener('online',check);};
   },[]);
   useEffect(()=>{if(session)void loadLists(session);},[session]);
+  // 401 em endpoint chamado COM token de sessão → sessão inválida/expirada/revogada:
+  // volta ao login com aviso não-técnico (o api() dispara o evento só nesse caso).
+  useEffect(()=>{
+    if(!session)return;
+    const onExpired=()=>endSession('Sua sessão foi encerrada por segurança. Entre novamente para continuar.');
+    window.addEventListener(EVENT_SESSION_EXPIRED,onExpired);
+    return ()=>window.removeEventListener(EVENT_SESSION_EXPIRED,onExpired);
+  },[session]);
   useEffect(()=>{
     if(user){void pendingCount(user.orgId,user.id).then(setPending).catch(()=>{});}
   },[user]);
@@ -270,7 +412,7 @@ export default function App(){
       setAiResult(response.suggestion);alert('Sugestão recebida. Revise todos os campos antes de registrar.','info');
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
   }
-  if(!session)return <Access onLogin={setSession}/>;
+  if(!session)return <Access onLogin={startSession} notice={accessNotice||undefined}/>;
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand-row"><IconMark/><span>StarMed</span></div>
@@ -278,12 +420,12 @@ export default function App(){
       <Nav view={view} onView={setView} role={user!.role}/>
       <div className="sidebar-bottom">
         <div className="environment-note"><ShieldCheck size={17}/><span>MVP de desenvolvimento<br/>Não homologado para produção</span></div>
-        <button className="logout-button" onClick={()=>{setSession(null);setPassphrase('');setTranscript('');setAiResult(null);setPatient(null);setEncounter(null);setNote(null);}}><LogOut size={17}/> Sair</button>
+        <button className="logout-button" onClick={()=>endSession()}><LogOut size={17}/> Sair</button>
       </div>
     </aside>
     <div className="workspace">
       <header className="topbar">
-        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD'} as const)[view]}</strong></div>
+        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD',security:'Segurança'} as const)[view]}</strong></div>
         <div className="topbar-right"><span className={'status-dot '+(serverReady?'':'offline')}/>{serverReady?'API disponível':'API indisponível'} <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="content">
@@ -395,7 +537,7 @@ export default function App(){
               <label>Perfil<select value={newStaff.role} onChange={e=>setNewStaff({...newStaff,role:e.target.value})}><option value="doctor">Médico</option><option value="nurse">Enfermagem</option><option value="reception">Recepção</option><option value="admin">Administrador</option></select></label>
               <label>Senha temporária (mín. 12 caracteres)<input required minLength={12} type="password" value={newStaff.password} onChange={e=>setNewStaff({...newStaff,password:e.target.value})}/></label>
               <button className="primary-button" type="submit"><Plus size={17}/> Cadastrar</button>
-            </form><p className="security-note">MFA e redefinição de senha são itens pendentes para produção.</p></div></div>
+            </form><p className="security-note">Verificação em duas etapas disponível em Segurança. A redefinição de senha pelo usuário é item pendente para produção.</p></div></div>
         </section>}
         {view==='assistant'&&<section><div className="page-heading"><div><span className="eyebrow">ASSISTÊNCIA À DOCUMENTAÇÃO</span><h1>Assistente clínico</h1><p>Extração estruturada de uma transcrição para revisão humana.</p></div></div>
           <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Transcrição da consulta</h2><Sparkles size={20}/></div><form onSubmit={askAI} className="stack gap-4">
@@ -409,6 +551,7 @@ export default function App(){
         {view==='templates'&&<TemplatesPage session={session!} alert={alert}/>}
         {view==='metrics'&&<MetricsPage session={session!} alert={alert}/>}
         {view==='lgpd'&&<LgpdPage session={session!} patients={patients} alert={alert}/>}
+        {view==='security'&&<SecurityPage session={session!} alert={alert} onMfaDisabled={()=>endSession('Verificação em duas etapas desativada. Entre novamente para continuar.')}/>}
       </main>
       <footer className="footer"><div><span className="status-dot"/> StarMed MVP • Ambiente não homologado</div><div className="offline-actions"><LockKeyhole size={15}/><input aria-label="Frase-senha offline" type="password" placeholder="Frase-senha offline (mín. 12)" value={passphrase} onChange={e=>setPassphrase(e.target.value)}/><button onClick={()=>void syncNow()} disabled={loading||!pending||passphrase.length<12}><CloudUpload size={15}/> Sincronizar {pending? '('+pending+')':''}</button></div></footer>
     </div>

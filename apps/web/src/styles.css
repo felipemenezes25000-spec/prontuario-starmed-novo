@@ -27,3 +27,29 @@
 .clinical-details form{padding:14px 0}
 
 .status-dot.offline{background:#e18e70}
+
+/* Autenticação: etapa MFA no login, SSO e segurança da conta */
+.login-panel .notice{margin-top:14px}
+.sso-divider{display:flex;align-items:center;gap:12px;margin:18px 0 12px;color:#9fb2ba;font-size:11px;font-weight:700}
+.sso-divider::before,.sso-divider::after{content:"";flex:1;height:1px;background:#e7edf0}
+.sso-button{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:44px;background:#fff;border:1px solid #cfdde4;border-radius:9px;color:#1b3d4d;font-size:12px;font-weight:800}
+.sso-button:hover:not(:disabled){background:#f4fafb;border-color:#a9c8d3}
+.mfa-modes{display:flex;gap:8px;margin-top:16px}
+.mode-button{flex:1;padding:9px 10px;border:1px solid #dbe6eb;background:#fbfdfd;border-radius:9px;color:#5b7885;font-size:11px;font-weight:700}
+.mode-button.active{background:#e6f8f4;border-color:#14bba6;color:#0f8f7d;box-shadow:0 0 0 3px #14bba61a}
+.mfa-back{margin-top:16px;color:#5b7885}
+.code-input{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:21px;letter-spacing:.32em;text-align:center;padding:12px 8px;min-height:48px}
+.secret-field{display:flex;gap:8px;align-items:center;background:#f7fafb;border:1px solid #e3edf0;border-radius:9px;padding:5px 10px}
+.secret-field input{flex:1;background:transparent;border:0;padding:8px 2px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#234655;letter-spacing:.04em}
+.secret-field input:focus{outline:2px solid #14bba655;outline-offset:1px}
+.secret-field .text-button{flex-shrink:0}
+.mfa-steps{margin:6px 0 18px;padding-left:20px;color:#496674;font-size:12px;line-height:1.9}
+.mfa-steps li{padding-left:4px}
+.mfa-steps li::marker{color:#13a28e;font-weight:800}
+.mfa-facts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.recovery-once{border:1px solid #f2dcae;background:#fffbf1;border-radius:13px;padding:18px;margin-bottom:18px}
+.recovery-once-head{display:flex;align-items:center;gap:9px;color:#9a7524;font-size:13px}
+.recovery-once-head svg{color:#d9a13b;flex-shrink:0}
+.recovery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:9px;list-style:none;padding:0;margin:14px 0 0}
+.recovery-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;font-weight:700;letter-spacing:.06em;text-align:center;background:#fff;border:1px dashed #dfc68a;border-radius:8px;padding:9px 6px;color:#5b4415;overflow-wrap:anywhere}
+@media(max-width:720px){.mfa-modes{flex-direction:column}.recovery-grid{grid-template-columns:repeat(2,1fr)}}

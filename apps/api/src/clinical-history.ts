@@ -2,9 +2,10 @@ import { Body, Controller, Get, NotFoundException, Param, Post, Req } from '@nes
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
-import { Actor, audit, requestContext, requireRole } from './security';
+import { Actor, audit, requestContext, requireCareContext, requireRole } from './security';
 
-type ReqWithActor = { actor:Actor };
+type ReqWithActor = { actor:Actor; headers?: Record<string, unknown> };
+const breakGlassOf = (req: ReqWithActor) => req.headers?.['x-break-glass-reason'];
 const allergySchema=z.object({
   substance:z.string().trim().min(2).max(200),
   reaction:z.string().trim().max(1000).optional(),

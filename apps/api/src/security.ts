@@ -129,13 +129,14 @@ export async function audit(db:QueryRunner, actor:Actor, action:string, targetTy
  * que já é da org do ator.
  */
 export async function resolveCareContext(db: QueryRunner, actor: Actor, patientId: string): Promise<'created'|'encounter'|'appointment'|null> {
-  const r = await db.query<{ created: boolean; encounter: boolean; appointment: boolean }>(
+  // QueryRunner não é genérico; a linha é tratada como o retorno tipado do EXISTS.
+  const r = await db.query(
     `SELECT
        EXISTS(SELECT 1 FROM patients WHERE id=$2 AND org_id=$1 AND created_by=$3) AS created,
        EXISTS(SELECT 1 FROM encounters WHERE patient_id=$2 AND org_id=$1) AS encounter,
        EXISTS(SELECT 1 FROM appointments WHERE patient_id=$2 AND org_id=$1) AS appointment`,
     [actor.org_id, patientId, actor.id]);
-  const row = r.rows[0];
+  const row = r.rows[0] as { created: boolean; encounter: boolean; appointment: boolean } | undefined;
   if (!row) return null;
   return row.created ? 'created' : row.encounter ? 'encounter' : row.appointment ? 'appointment' : null;
 }

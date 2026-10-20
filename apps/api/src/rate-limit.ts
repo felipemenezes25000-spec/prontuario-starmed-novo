@@ -30,7 +30,7 @@ export class PgRateLimitStore {
   }
 }
 
-type MiddlewareReq = { ip?: string };
+type MiddlewareReq = { ip?: string; method?: string };
 type MiddlewareRes = {
   setHeader(name: string, value: string | number): unknown;
   status(code: number): { json(body: unknown): unknown };
@@ -44,6 +44,10 @@ export function rateLimitMiddleware(
   message: string
 ) {
   return async (req: MiddlewareReq, res: MiddlewareRes, next: (err?: unknown) => void): Promise<void> => {
+    // Preflight CORS (OPTIONS) NÃO é uma tentativa de login/MFA: não consome o
+    // orçamento da janela (um cross-origin genuíno gasta 1 preflight + 1 POST por
+    // tentativa) e não pode ser explorado para esgotar o limite de um usuário.
+    if (req.method === 'OPTIONS') { next(); return; }
     try {
       const decision = await store.hit(`${name}:${req.ip || 'unknown'}`, limit, windowMs);
       res.setHeader('RateLimit-Limit', limit);

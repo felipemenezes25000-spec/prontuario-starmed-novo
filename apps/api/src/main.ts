@@ -45,6 +45,15 @@ async function bootstrap(){
   // só ative atrás do proxy que sobrescreve o header (senão o IP é forjável).
   // Ajuste é do Express subjacente (getInstance é any no HttpAdapter do Nest).
   if(process.env.TRUST_PROXY==='true') app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  // CORS ANTES de qualquer middleware que possa encurtar a resposta (rate limit
+  // responde 429 sem passar adiante): sem isso, um 429/login sai SEM header de
+  // CORS e o navegador mascara o erro real como "não foi possível conectar".
+  // PATCH é necessário: rotas @Patch existentes (ex.: PATCH /hospital/orders/:id/status,
+  // PATCH /prescriptions/:id) falhariam no preflight do navegador sem ele.
+  // X-Break-Glass-Reason: sem ele o retry do painel de break-glass é BLOQUEADO pelo
+  // preflight quando web e API estão em origens diferentes (a UI nunca funcionou
+  // cross-origin nesse fluxo — E2E descobriu; o smoke via curl não passa por CORS).
+  app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,PATCH,OPTIONS',allowedHeaders:'Authorization,Content-Type,X-Break-Glass-Reason'});
   // Rate limit DISTRIBUÍDO (P0-07): contador em Postgres (021), compartilhado
   // entre instâncias — mesmas rotas e mesmos limites de antes, sem segredo novo.
   const rateLimiter=(route:string,message:string,limit:number,minutes:number)=>
@@ -65,9 +74,6 @@ async function bootstrap(){
     res.setHeader('X-Request-Id',requestId);
     requestContext.run({requestId},next);
   });
-  // PATCH é necessário: rotas @Patch existentes (ex.: PATCH /hospital/orders/:id/status,
-  // PATCH /prescriptions/:id) falhariam no preflight do navegador sem ele.
-  app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,PATCH,OPTIONS',allowedHeaders:'Authorization,Content-Type'});
   await app.listen(Number(process.env.API_PORT || 3001),'127.0.0.1');
   console.log('StarMed API ready on localhost');
 }

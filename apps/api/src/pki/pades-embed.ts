@@ -166,7 +166,10 @@ export function stampByteRange(pdf: Buffer): Buffer {
   const prefix = '/ByteRange ';
   const replacement = `[${digits(a)} ${digits(b)} ${digits(c)}]`;
   if (replacement.length !== BYTERANGE_SLOT.length)
-    throw new Error('ByteRange com largura diferente do slot (offsets mudariam)');
+    throw new Error(
+      `ByteRange com largura diferente do slot (offsets mudariam): ` +
+      `replacement.length=${replacement.length} slot.length=${BYTERANGE_SLOT.length} ` +
+      `a=${a} b=${b} c=${c} replacement='${replacement}' slot='${BYTERANGE_SLOT}'`);
   // indexOf determinístico contra a CONSTANTE do slot (sem armadilhas de replace).
   const slot = prefix + BYTERANGE_SLOT;
   const slotAt = text.indexOf(slot);

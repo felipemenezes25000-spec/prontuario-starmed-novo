@@ -145,8 +145,12 @@ jobs:
           $xml = $xml -replace '<tiss:tipoTransacao>[^<]+</tiss:tipoTransacao>', ''
           Set-Content -Path tiss-ci-invalid.xml -Value $xml -Encoding utf8
           pwsh scripts/tiss/validate-tiss.ps1 -Xml tiss-ci-invalid.xml
-          if ($LASTEXITCODE -eq 0) { Write-Error 'O validador aceitou um XML inválido — gate inoperante'; exit 1 }
+          $validatorExit = $LASTEXITCODE
+          if ($validatorExit -eq 0) { Write-Error 'O validador aceitou um XML inválido — gate inoperante'; exit 1 }
           Write-Output 'Gate negativo OK: XML inválido foi rejeitado pelo XSD da ANS.'
+          # Encerra explícito: o wrapper do pwsh propaga $LASTEXITCODE do validador
+          # (1, esperado) se não for zerado aqui.
+          exit 0
 
   security:
     name: Gitleaks — varredura de segredos

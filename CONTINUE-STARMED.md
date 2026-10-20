@@ -180,9 +180,10 @@ provedor OIDC real (config via OIDC_* no .env.example), credencial ACT SERPRO
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 
 Diretriz do usuário nesta rodada: **"execute tudo direto sem testa nada"** — nenhum
-`npm test`, build ou execução foi feito. Tudo abaixo é **IMPLEMENTADO, NÃO VALIDADO**;
-a primeira verificação executada será o CI após push (push NÃO feito: este arquivo exige
-`npm test`+`npm run build` antes de push — incompatível com a diretriz).
+`npm test`/build rodou **localmente**. Tudo abaixo é **IMPLEMENTADO, NÃO VALIDADO**
+localmente; após o push (autorizado pelo usuário em 20/10) o **CI do GitHub Actions
+executou e ficou VERDE em 3 execuções consecutivas** (runs `39460685945` + re-run +
+run do push dos docs; evidência completa em `docs/engineering/EXECUCAO_2026-10-20.md` §0).
 
 Feito (commits locais, branch `main`, a partir de `20b8012`):
 
@@ -214,14 +215,18 @@ Proteção de branch aplicada via API (PR + 1 aprovação + checks `API — test
 smoke`/`Web`/`SCA`/`Gitleaks`, sem force push; `enforce_admins=false` para não travar
 repo solo). `docs/engineering/EXECUCAO_2026-10-20.md` = matriz completa.
 
-**EM ANDAMENTO ao fim da sessão** (subagentes rodando, verificar com `git status`):
-P0-05 ABAC+auditoria (`security.ts`, `controllers.ts`… + migração `015_*`),
-P0-06 status honesto de assinatura (`signature.ts`, `pki/*`),
-P1-08 portal do paciente (UI `apps/web`). Se falharem sem editar: as tentativas
-anteriores morreram sem tocar em arquivo — reaplicar com mandato enxuto.
+**ENCERRADOS na sessão:** P0-06 assinatura (agente interrompido por travamento; deltas
+feitos pelo agente principal: código ITI de uso único atômico, `qualification`
+tri-estado, honestidade de revogação) e P1-08 portal (agente concluiu: `PatientPortal.tsx`
+com sessão segregada do staff). P0-05 ABAC: agente interrompido sem escrever; revisão
+estática completa pelo agente principal — o núcleo (guard `purpose`/`active`/`ver`,
+org em toda query, papéis por recurso) já era sólido; fechado `requestId` em todos os
+`audit_events`. Nota: 7 de 12 subagentes morreram sem editar nada (ler a lição em
+LIÇÕES DE OPERAÇÃO).
 
 **ABERTO (próximos passos, ordem de risco):**
-- Rodar CI (push/PR) e corrigir o que acusar, sem desligar gates.
+- CI: verde em 3 execuções consecutivas (feito); próximo passo é ampliar o smoke
+  (tenant duplo, auditoria readback, fixture de assinatura) e manter todo push sob gate.
 - `controllers.ts`: transições de agenda (check-in/no-show/cancel — enums já existem
   no schema, endpoints não).
 - P0-05 residual: GUC `starmed.org_id` por transação + papel de app não-owner + RLS

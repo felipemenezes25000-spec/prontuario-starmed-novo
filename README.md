@@ -25,7 +25,7 @@ MVP original de EHR/EMR para equipes clínicas, inspirado em boas práticas púb
 8. Em terminais separados: `npm run dev:api` e `npm run dev:web`
 9. Acesse http://localhost:5173; autentique como admin, cadastre um médico em **Equipe**, e entre como médico para criar evoluções.
 
-Execute `npm test` e `npm run build` antes de uso local; `npm run smoke` requer um banco **descartável** e a flag `STARMED_TEST_DB=true`. Os testes não foram executados neste ambiente durante a rodada de execução de 20/10/2026 — a primeira verificação executada é o CI do GitHub Actions após o push.
+Execute `npm test` e `npm run build` antes de uso local; `npm run smoke` requer um banco **descartável** e a flag `STARMED_TEST_DB=true`. **Evidência de execução (20/10/2026):** o pipeline do GitHub Actions está verde — testes de domínio, build API+Web, migrações, bootstrap, smoke + smoke:MFA, SCA/SBOM, Gitleaks e validação TISS (positiva e negativa) passaram em 3 execuções consecutivas (ver `docs/engineering/EXECUCAO_2026-10-20.md` §0).
 
 Consulte [instruções detalhadas](docs/getting-started.md), [arquitetura e roadmap](docs/architecture.md), [sincronização offline](docs/offline-sync.md) e [prompt de extração clínica](prompts/clinical-extraction.md).
 

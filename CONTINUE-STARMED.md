@@ -251,12 +251,36 @@ corrigido com allowlist justificado, **nenhum gate desligado**. Run IDs em
 **Próximo:** ~~push do marco F2b~~ **F2b ACEITO**: push `88dc3e2→0823e98` ·
 run `39521070197` ✗ (1 asserção de heading, causa documentada) → fix `39521450670`
 ✓ 6/6 (E2E 11/11) + re-run ✓ + docs `39521993685` ✓ = 3 verdes consecutivas.
-**Fase 3 EM VOO** (subagente: `hospital.ts` + `orders.ts` + `results.test.ts` +
-`Results.tsx`; contrato `database/023_diagnostic_results_cycle.sql` já escrito pelo
-orquestrador — ciclo pedido→…→comunicado, PDF em clinical_documents (gatilho 022),
-outbox DLQ + circuit breaker LIS/PACS nasce desligado). Integração pendente:
-main.ts, App.tsx (view Resultados), package.json (results.test.ts), 023 local,
-bateria completa, E2E jornada6.
+
+### H. FASE 3 — EXAMES E RESULTADOS (21/10/2026, mesma sessão) — ENTREGUE
+
+- **`database/023_diagnostic_results_cycle.sql`** (orquestrador): ciclo de status
+  (compat com legados), colunas de resultado/carimbos, `result_document_id`,
+  `integration_outbox` (DLQ `dead`) + `integration_circuit` — RLS tier1; FK de
+  coluna única (`diagnostic_orders` não tem UNIQUE(id,org_id) — falhou e foi
+  corrigido na execução); aplicada localmente (upgrade ✓) e no CI (clean ✓).
+- **Backend (subagente, revisado + consertes):** `orders.ts` (máquina de transições
+  pura, `PATCH /hospital/orders/:id/status` estendido com regras de domínio →409,
+  **crítico exige critical-ack antes de communicated**, `buildResultPdf`, download
+  com re-hash, LIS/PACS **nasce desligado** com outbox+backoff+DLQ+circuit
+  breaker), `hospital.ts` (filtros + colunas), `results.test.ts` (12 puros).
+  Consertos do orquestrador: `query<any>` em QueryRunner (tsc), FK da migração.
+- **Web (subagente + integração):** `Results.tsx` (filtros, ações por transição,
+  críticos "NÃO reconhecido"+ack, PDF blob, painel LIS honesto) — linha JSX com
+  `)` faltando corrigida; view `results` registrada no App (5 pontos, meu).
+- **E2E jornada6** (`results.spec.ts`, meu): ciclo com 409/400 de domínio, escalação
+  (409 sem ack → ack → comunicado + auditoria), PDF (404 antes → gerar → %PDF →
+  v1 pelo gatilho → timeline `exam/final`), LIS 409 "desligada" + drenagem vazia.
+- **Achado de infra E2E:** caches por bundle do Playwright morriam (contador
+  `rate_limits` comprovou **11 hits →429**) → **`scripts/e2e/preflight.mjs`**
+  injeta admin+doctor como **ENV** no runner: **8/10 determinístico** (log
+  `[e2e:login]` audita cada consumo; J2 migrada p/ doctor compartilhado).
+- **Validação local:** `npm test` **147/147** · build ✓ · `migrate` 023 (upgrade +
+  dry-run) ✓ · **E2E 14/14 ✓** · **CI `39525441728` 6/6 (E2E 1m12s)** + re-run.
+
+**Próximo:** 3º verde (docs) → Fase 4 (Teleconsulta: `teleconsult.ts` +
+`Teleconsult*.tsx`, WebRTC browser↔browser, gravação desligada por padrão, E2E com
+fake media) → Fase 5 (Portal) → Fase 6 (Interop) → Fase 7 (UX/WCAG+Métricas).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

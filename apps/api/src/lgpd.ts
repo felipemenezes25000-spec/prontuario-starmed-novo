@@ -261,6 +261,26 @@ export class PatientLgpdController {
     return rows.rows;
   }
 
+  /**
+   * Histórico de solicitações DO TITULAR: mesmo shape do GET /lgpd/requests da
+   * equipe (linha 97), filtrado pelo patient_id do token — o titular enxerga
+   * apenas os próprios pedidos (LGPD art. 18, §3º — confirmação de requerimento).
+   */
+  @Public()
+  @Get('lgpd/requests')
+  async selfListRequests(@Req() req: { headers: { authorization?: string } }) {
+    const session = await this.portalSession(req);
+    const rows = await this.db.query(
+      `SELECT id,patient_id,kind,status,due_at,fulfilled_at,refused_reason,requested_channel,created_at
+       FROM lgpd_requests WHERE org_id=$1 AND patient_id=$2 ORDER BY due_at ASC LIMIT 200`,
+      [session.orgId, session.patientId]);
+    await this.db.query(
+      'INSERT INTO audit_events(org_id,action,target_type,target_id,details) VALUES($1,$2,$3,$4,$5)',
+      [session.orgId, 'portal.lgpd.requests.read', 'patient', session.patientId,
+       JSON.stringify({requestId:requestContext.getStore()?.requestId??null})]);
+    return rows.rows;
+  }
+
   private async portalSession(req: { headers: { authorization?: string } }) {
     const value = req.headers?.authorization;
     if (!value || !/^Bearer\s+\S+$/i.test(value)) throw new UnauthorizedException('Sessão do portal inválida');

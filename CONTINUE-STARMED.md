@@ -301,10 +301,29 @@ run `39521070197` ✗ (1 asserção de heading, causa documentada) → fix `3952
 - **Validação local:** `npm test` **152/152** (+5 puros de teleconsult) · build ✓ ·
   **E2E 16/16 ✓** · login budget **9/10** determinístico · ADR-0004.
 
-**Próximo:** push F4 → CI6jobs → run IDs (3 verdes) → **Fase 5 (Portal do
-paciente: `portal.ts` + `lgpd.ts` + `PatientPortal.tsx` — conteúdo de documento
-com bytes+re-hash, histórico LGPD, preferências de notificação, opt-out)** →
-Fase 6 (Interop) → Fase 7 (UX/WCAG+Métricas).
+**Próximo:** push F4 → CI6jobs → run IDs (3 verdes) → **Fase 5 (Portal) ENTREGUE
+(ver §J)** → Fase 6 (Interop) → Fase 7 (UX/WCAG+Métricas).
+
+### J. FASE 5 — PORTAL DO PACIENTE (21/10/2026, mesma sessão) — ENTREGUE
+
+- **`database/024`** (orquestrador): `notification_prefs` JSONB (serviço ON,
+  marketing OFF) + `crm_outbox.patient_id` (comprovação do titular) — upgrade local ✓.
+- **Backend (subagente, revisado)**: `GET /portal/me/{profile,documents,documents/:id/content,
+  notifications,notifications/history,lgpd/requests}` + `PUT notifications` + send com
+  **409 de opt-out** e `patient_id`; conteúdo PDF **re-hash inline (sem link público)`;
+  9 testes puros (`portal-prefs.test.ts`). **Bug pré-existente corrigido**: UI chamava
+  `/portal/*` (404) em vez de `/portal/me/*`.
+- **UI**: ativação por convite, conteúdo inline (blob+revoke), seções Notificações
+  (toggle otimista+revert) e Meu perfil; ZERO "Recurso indisponível".
+- **E2E jornada8** (`tests/e2e/portal.spec.ts`): API completa + UI de ativação.
+- **Validação local:** `npm test` **161/161** · build ✓ · **E2E 18/18** ·
+  login budget9/10 · integração (package.json/022..024 aplicadas; main.ts sem novos
+  controllers).
+
+**Próximo:** push F5 → CI →3 verdes → **Fase 6 (Interop ST-P1-009/010: validador
+FHIR oficial sobre fixtures + CapabilityStatement honesto + SMART scopes reais +
+MLLP sobre TLS + DICOMweb sandbox + adapters retry/DLQ nascer desligados)** →
+Fase 7 (UX/WCAG+Métricas) → Fase 8 (IA/Hospitalar).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { AlertCircle, CalendarDays, CheckCircle2, ClipboardList, FileSignature, HeartPulse, LockKeyhole, LogOut, Plus, ShieldCheck, WifiOff, X } from 'lucide-react';
+import { AlertCircle, Bell, CalendarDays, CheckCircle2, ClipboardList, FileSignature, HeartPulse, LockKeyhole, LogOut, Plus, ShieldCheck, User, WifiOff, X } from 'lucide-react';
 import { ApiError } from '../api';
 
 /**
@@ -9,18 +9,25 @@ import { ApiError } from '../api';
  * e PatientLgpdController em apps/api/src/lgpd.ts):
  *   POST /portal/activate             {inviteCode,email,password} → {activated,accessToken}
  *   POST /portal/login                {email,password}            → {accessToken,patient:{id}}
- *   GET  /portal/appointments                                     → consultas do próprio paciente
- *   GET  /portal/documents                                        → documentos assinados do próprio paciente
- *   POST /portal/appointment-requests {preferredSpecialty,preferredPeriod,notes?}
+ *   GET  /portal/me/profile           → perfil mínimo do próprio paciente (somente leitura)
+ *   GET  /portal/me/appointments                                    → consultas do próprio paciente
+ *   GET  /portal/me/documents                                      → itens {id,kind:'note'|'pdf',title,…}
+ *   GET  /portal/me/documents/:id/content                           → PDF (blob) ou JSON da nota assinada
+ *   POST /portal/me/appointment-requests {preferredSpecialty,preferredPeriod,notes?}
+ *   GET  /portal/me/notifications     → {prefs:{whatsapp,email,sms,marketingOptIn}}
+ *   PUT  /portal/me/notifications     {whatsapp?|email?|sms?|marketingOptIn?} (opt-out/opt-in)
+ *   GET  /portal/me/notifications/history → comprovação de entrega (crm_outbox real)
  *   POST /portal/me/lgpd/requests     {kind,channel,deadlineDays}
+ *   GET  /portal/me/lgpd/requests     → histórico das solicitações do titular
  *   GET  /portal/me/consents          → [{purpose,granted,created_at}]
  *   POST /portal/me/consents          {purpose,granted}
  * As chamadas usam um fetch próprio (portalCall): NÃO disparam
  * EVENT_SESSION_EXPIRED, que é exclusivo da sessão clínica da equipe. Um 401/403
  * do token do portal volta ao login do portal com aviso não-técnico. Nada de
  * dados pessoais em query string/URL: token no header e parâmetros no corpo.
- * Documentos NÃO viram links: são listados só com o token — nada é acessível
- * por posse de URL.
+ * Documentos NÃO viram links: a lista sai só com o token e o CONTEÚDO é
+ * buscado na requisição autenticada (blob em memória) — nada é acessível por
+ * posse de URL, portanto não existe link público a expirar.
  */
 
 // Mesmo host de apps/web/src/api.ts (o helper api() é da sessão da equipe e
@@ -32,9 +39,14 @@ const OFFLINE='Você está sem conexão. Verifique sua internet e tente novament
 
 type PortalSession={accessToken:string};
 type PortalAppointment={id:string;scheduled_at:string;duration_minutes:number;status:string;kind:string;practitioner:string};
-type PortalDocument={id:string;template_id:string;signed_at:string|null;version:number};
+/** Item da lista evoluída de documentos (notas assinadas + PDFs do paciente). */
+type PortalDocument={id:string;kind:'note'|'pdf';title:string;signedAt?:string|null;createdAt?:string|null;version?:number;sha256?:string;docType?:string};
+type PortalDocumentContent={noteId:string;signedAt:string|null;sections:Record<string,unknown>};
+type PortalProfile={id:string;fullName:string;birthDate:string|null;administrativeGender:string|null;phone:string|null;insuranceId:string|null};
+type NotificationPrefs={whatsapp:boolean;email:boolean;sms:boolean;marketingOptIn:boolean};
+type NotificationHistoryItem={id:string;channel:string;template:string;status:string;providerMessageId:string|null;errorDetail:string|null;createdAt:string};
 type Consent={purpose:string;granted:boolean;created_at:string};
-type PortalLgpdRequest={id:string;kind:string;status:string;due_at:string};
+type PortalLgpdRequest={id:string;kind:string;status:string;due_at:string;fulfilled_at?:string|null;refused_reason?:string|null;requested_channel?:string;created_at?:string};
 type AppointmentRequest={id:string;status:string;created_at:string};
 
 /** Fetch do portal: igual ao api() da equipe, mas sem disparar o evento de sessão clínica. */
@@ -75,10 +87,21 @@ const PURPOSES=[
 ];
 const APPOINTMENT_STATUS:Record<string,string>={scheduled:'Agendada',confirmed:'Confirmada',completed:'Concluída',done:'Concluída',cancelled:'Cancelada',canceled:'Cancelada',no_show:'Não compareceu'};
 const APPOINTMENT_KIND:Record<string,string>={consultation:'Consulta',teleconsultation:'Teleconsulta',procedure:'Procedimento',exam:'Exame'};
-const REQUEST_STATUS:Record<string,string>={requested:'Recebida',in_progress:'Em análise',completed:'Concluída',refused:'Recusada'};
+const REQUEST_STATUS:Record<string,string>={requested:'Solicitado',in_progress:'Em análise',completed:'Concluído',refused:'Recusado'};
+const DOCUMENT_KIND:Record<string,string>={note:'Nota assinada',pdf:'PDF'};
+const DOCUMENT_TYPE:Record<string,string>={prescription:'Prescrição',exam_result:'Resultado de exame'};
+const NOTIFICATION_STATUS:Record<string,string>={queued:'Na fila',sent:'Enviada',failed:'Falhou'};
+const NOTIFY_CHANNEL:Record<string,string>={whatsapp:'WhatsApp',email:'E-mail',sms:'SMS'};
+const NOTIFY_TEMPLATE:Record<string,string>={appointment_reminder:'Lembrete de consulta',result_ready:'Resultado disponível',appointment_request_received:'Pedido de agendamento recebido'};
+const QUEUE_HONESTY='envio real depende do provedor configurado — sem ele, fica na fila';
+const GENDER_LABEL:Record<string,string>={male:'Masculino',female:'Feminino',other:'Outro',unknown:'Não informado'};
 
 const fmt=(v:string)=>new Date(v).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
 const fmtDay=(v:string)=>new Date(v).toLocaleDateString('pt-BR',{dateStyle:'long'});
+/** DATE do Postgres (YYYY-MM-DD) sem deslocar de fuso (novo Date('…') é UTC). */
+const fmtDateOnly=(v:string)=>/^\d{4}-\d{2}-\d{2}$/.test(v)
+  ?new Date(+v.slice(0,4),+v.slice(5,7)-1,+v.slice(8,10)).toLocaleDateString('pt-BR',{dateStyle:'long'})
+  :fmtDay(v);
 const protocol=(id:string)=>id.slice(0,8);
 
 /** Erros do login/ativação em linguagem amigável (nada técnico para o público leigo). */
@@ -103,6 +126,26 @@ function sectionErrorText(e:unknown):string{
 function portalAuthFailed(e:unknown,onAuthFail:()=>void):boolean{
   if(e instanceof ApiError&&(e.status===401||e.status===403)){onAuthFail();return true;}
   return false;
+}
+/** Erros ao abrir o CONTEÚDO de um documento:404/500 mostram a frase amigável do
+ *  servidor (PDF ausente / corrompido); se vier JSON técnico cru, mostro frase
+ *  própria — nunca dado bruto para o público leigo. */
+function documentErrorText(e:unknown):string{
+  if(e instanceof ApiError){
+    const m=typeof e.message==='string'?e.message:'';
+    const technical=!m||m.startsWith('[')||m.startsWith('{')||m.startsWith('"');
+    if(!technical)return m;
+    if(e.status===404)return 'Este documento não está disponível no momento.';
+    if(e.status===500)return 'Não foi possível abrir o documento agora. Tente novamente.';
+    return sectionErrorText(e);
+  }
+  return sectionErrorText(e);
+}
+/** Seções da nota assinada → texto pré-formatado para o painel de conteúdo. */
+function sectionsText(sections:Record<string,unknown>):string{
+  const entries=Object.entries(sections??{});
+  if(!entries.length)return '(esta nota não tem seções de conteúdo)';
+  return entries.map(([k,v])=>`— ${k} —\n${typeof v==='string'?v:JSON.stringify(v,null,2)}`).join('\n\n');
 }
 
 function InlineError({text}:{text:string}){
@@ -195,7 +238,7 @@ function AppointmentsPanel({token,onAuthFail}:{token:string;onAuthFail:()=>void}
   async function load(){
     setLoading(true);setError('');
     try{
-      const rows=await portalCall<PortalAppointment[]>('/portal/appointments',token);
+      const rows=await portalCall<PortalAppointment[]>('/portal/me/appointments',token);
       const now=Date.now();
       const future=rows.filter(a=>new Date(a.scheduled_at).getTime()>=now).sort((x,y)=>new Date(x.scheduled_at).getTime()-new Date(y.scheduled_at).getTime());
       const past=rows.filter(a=>new Date(a.scheduled_at).getTime()<now).sort((x,y)=>new Date(y.scheduled_at).getTime()-new Date(x.scheduled_at).getTime());
@@ -234,7 +277,7 @@ function RequestAppointmentPanel({token,onAuthFail}:{token:string;onAuthFail:()=
   async function submit(e:FormEvent){
     e.preventDefault();setBusy(true);setError('');setDone('');
     try{
-      const created=await portalCall<AppointmentRequest>('/portal/appointment-requests',token,'POST',
+      const created=await portalCall<AppointmentRequest>('/portal/me/appointment-requests',token,'POST',
         {preferredSpecialty:form.specialty,preferredPeriod:form.period,notes:form.notes.trim()||undefined});
       setDone('Pedido enviado! Protocolo '+protocol(created.id)+'. A clínica vai analisar e entrar em contato.');
       setForm({specialty:'general',period:'any',notes:''});
@@ -264,24 +307,77 @@ function RequestAppointmentPanel({token,onAuthFail}:{token:string;onAuthFail:()=
 }
 
 /* -------------------------------------------------------------------------
- * Painel autenticado — documentos assinados (GET /portal/documents).
- * Listagem apenas com o token; sem links: nada é acessível por posse de URL.
+ * Painel autenticado — documentos (GET /portal/me/documents, lista evoluída:
+ * notas assinadas + PDFs do paciente) com abertura de CONTEÚDO via
+ * GET /portal/me/documents/:id/content. Tudo pela requisição autenticada:
+ * PDF vira blob em memória (nova aba, com revoke) — sem link público.
  * ---------------------------------------------------------------------- */
 function DocumentsPanel({token,onAuthFail}:{token:string;onAuthFail:()=>void}){
   const [items,setItems]=useState<PortalDocument[]|null>(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState('');
+  const [openingId,setOpeningId]=useState('');
+  const [contentError,setContentError]=useState('');
+  const [openNote,setOpenNote]=useState<{title:string;signedAt:string|null;text:string}|null>(null);
   async function load(){
     setLoading(true);setError('');
-    try{setItems(await portalCall<PortalDocument[]>('/portal/documents',token));}
+    try{setItems(await portalCall<PortalDocument[]>('/portal/me/documents',token));}
     catch(e){
       if(portalAuthFailed(e,onAuthFail))return;
       setItems(null);setError(sectionErrorText(e));
     }finally{setLoading(false);}
   }
   useEffect(()=>{void load();},[]);
-  // template_id pode ser um identificador técnico; só mostro texto quando é legível.
-  const title=(t:string)=>/^[0-9a-f-]{8,}$/i.test(t)?'Documento assinado':(t||'Documento assinado');
+  /** PDF: busca autenticada → blob aberto em nova aba (revogado em seguida). */
+  async function openPdf(d:PortalDocument){
+    if(openingId)return;
+    setOpeningId(d.id);setContentError('');setOpenNote(null);
+    try{
+      const response=await fetch(base+'/portal/me/documents/'+d.id+'/content',{
+        method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token}
+      });
+      if(response.status===401||response.status===403){onAuthFail();return;}
+      if(!response.ok){
+        const data:unknown=await response.json().catch(()=>null);
+        const message=data&&typeof data==='object'&&typeof (data as {message?:unknown}).message==='string'
+          ?(data as {message:string}).message:'';
+        setContentError(documentErrorText(new ApiError(response.status,message)));return;
+      }
+      const blob=await response.blob();
+      const url=URL.createObjectURL(blob);
+      const win=window.open(url,'_blank','noopener');
+      if(win){
+        // Revogação adiada: a aba nova ainda lê o blob; nada fica persistido.
+        window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+      }else{
+        // Pop-up bloqueado → baixa o arquivo; URL revogada após o clique.
+        const anchor=document.createElement('a');
+        anchor.href=url;anchor.download='documento-'+d.id.slice(0,8)+'.pdf';
+        document.body.appendChild(anchor);anchor.click();anchor.remove();
+        URL.revokeObjectURL(url);
+      }
+    }catch{setContentError(navigator.onLine?NETWORK:OFFLINE);}
+    finally{setOpeningId('');}
+  }
+  /** Nota assinada: JSON das sections em painel pré-formatado. */
+  async function openNoteDoc(d:PortalDocument){
+    if(openingId)return;
+    setOpeningId(d.id);setContentError('');setOpenNote(null);
+    try{
+      const content=await portalCall<PortalDocumentContent>('/portal/me/documents/'+d.id+'/content',token);
+      setOpenNote({title:d.title,signedAt:content.signedAt,text:sectionsText(content.sections)});
+    }catch(e){
+      if(portalAuthFailed(e,onAuthFail))return;
+      setContentError(documentErrorText(e));
+    }finally{setOpeningId('');}
+  }
+  function openContent(d:PortalDocument){if(d.kind==='pdf')void openPdf(d);else void openNoteDoc(d);}
+  const pill=(d:PortalDocument)=>d.kind==='pdf'
+    ?(DOCUMENT_TYPE[d.docType??'']||d.docType||'PDF')
+    :(d.version?`versão ${d.version}`:'Nota assinada');
+  const when=(d:PortalDocument)=>d.kind==='pdf'&&d.createdAt
+    ?'Emitido em '+fmtDay(d.createdAt)
+    :(d.signedAt?'Assinado em '+fmtDay(d.signedAt):DOCUMENT_KIND[d.kind]||'Documento');
   return <div className="panel">
     <div className="panel-title"><h2>Meus documentos</h2>{items&&<span className="small-pill">{items.length} {items.length===1?'documento':'documentos'}</span>}</div>
     {loading&&<p className="muted" role="status">Carregando seus documentos…</p>}
@@ -291,11 +387,24 @@ function DocumentsPanel({token,onAuthFail}:{token:string;onAuthFail:()=>void}){
     {!loading&&!error&&(items?.length??0)>0&&<div>
       {items!.map(d=><div className="list-line" key={d.id}>
         <div className="list-icon"><FileSignature size={18}/></div>
-        <div><strong>{title(d.template_id)}</strong><small>{d.signed_at?'Assinado em '+fmtDay(d.signed_at):'Documento assinado'}</small></div>
-        <span className="small-pill">versão {d.version}</span>
+        <div><strong>{d.title}</strong>
+          <small>{when(d)}{d.kind==='pdf'&&d.sha256?` • hash ${d.sha256.slice(0,12)}…`:''}</small></div>
+        <div className="portal-consent-actions">
+          <span className="small-pill">{pill(d)}</span>
+          <button type="button" className="secondary-button" disabled={openingId===d.id} onClick={()=>openContent(d)}>
+            {openingId===d.id?'Abrindo…':'Abrir conteúdo'}</button>
+        </div>
       </div>)}
     </div>}
-    <p className="muted footnote"><strong>Recurso indisponível:</strong> a abertura do conteúdo dos documentos ainda não existe nesta versão do portal — fale com a clínica para receber uma cópia.</p>
+    {contentError&&<div className="stack gap-3 mt-8">
+      <InlineError text={contentError}/>
+      <div><button type="button" className="secondary-button" onClick={()=>setContentError('')}>Fechar aviso</button></div></div>}
+    {openNote&&<div className="stack gap-3 mt-8">
+      <div className="panel-title"><h2>{openNote.title}</h2>
+        <button type="button" className="secondary-button" onClick={()=>setOpenNote(null)}><X size={15}/> Fechar</button></div>
+      <p className="muted">Nota assinada{openNote.signedAt?' em '+fmtDay(openNote.signedAt):''} • conteúdo exatamente como assinado.</p>
+      <pre>{openNote.text}</pre>
+    </div>}
   </div>;
 }
 
@@ -306,29 +415,50 @@ function LgpdRequestsPanel({token,onAuthFail}:{token:string;onAuthFail:()=>void}
   const [kind,setKind]=useState('access');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
-  const [created,setCreated]=useState<PortalLgpdRequest[]>([]);
+  // Histórico real do titular: GET /portal/me/lgpd/requests (mesmo shape do staff).
+  const [history,setHistory]=useState<PortalLgpdRequest[]|null>(null);
+  const [historyLoading,setHistoryLoading]=useState(true);
+  const [historyError,setHistoryError]=useState('');
+  async function loadHistory(){
+    setHistoryLoading(true);setHistoryError('');
+    try{setHistory(await portalCall<PortalLgpdRequest[]>('/portal/me/lgpd/requests',token));}
+    catch(e){
+      if(portalAuthFailed(e,onAuthFail))return;
+      setHistory(null);setHistoryError(sectionErrorText(e));
+    }finally{setHistoryLoading(false);}
+  }
+  useEffect(()=>{void loadHistory();},[]);
   async function submit(e:FormEvent){
     e.preventDefault();setBusy(true);setError('');
     try{
-      const r=await portalCall<PortalLgpdRequest>('/portal/me/lgpd/requests',token,'POST',{kind,channel:'portal'});
-      setCreated(prev=>[r,...prev]);
+      await portalCall<PortalLgpdRequest>('/portal/me/lgpd/requests',token,'POST',{kind,channel:'portal'});
+      await loadHistory(); // recarrega: o histórico real já inclui o pedido recém-criado
     }catch(err){
       if(portalAuthFailed(err,onAuthFail))return;
       setError(sectionErrorText(err));
     }finally{setBusy(false);}
   }
+  const kindLabel=(v:string)=>(LGPD_KINDS.find(k=>k.value===v)||{label:v}).label;
+  const detail=(r:PortalLgpdRequest)=>{
+    const head='Protocolo '+protocol(r.id)+(r.created_at?' • pedido em '+fmtDay(r.created_at):'');
+    if(r.status==='completed'&&r.fulfilled_at)return head+' • atendido em '+fmtDay(r.fulfilled_at);
+    if(r.status==='refused')return head+(r.refused_reason?' • '+r.refused_reason.slice(0,160):' • recusado pela clínica');
+    return head+' • resposta até '+fmt(r.due_at);
+  };
   return <div className="panel">
     <div className="panel-title"><h2>Solicitações de privacidade</h2><ShieldCheck size={19}/></div>
     <p className="muted">Você pode pedir acesso, correção ou exclusão dos seus dados. A clínica responde dentro do prazo da lei.</p>
-    <div className="notice info" role="status"><AlertCircle size={17}/><span><strong>Recurso indisponível:</strong> ainda não é possível consultar o histórico das suas solicitações pelo portal.</span></div>
-    {created.length>0&&<div>
-      <span className="eyebrow">FEITAS AGORA (NESTA SESSÃO)</span>
-      <div>{created.map(r=><div className="list-line" key={r.id}>
+    <span className="eyebrow">SEU HISTÓRICO</span>
+    {historyLoading&&<p className="muted" role="status">Carregando suas solicitações…</p>}
+    {!historyLoading&&historyError&&<div className="stack gap-3"><InlineError text={historyError}/>
+      <div><button type="button" className="secondary-button" onClick={()=>void loadHistory()}>Tentar novamente</button></div></div>}
+    {!historyLoading&&!historyError&&history!==null&&history.length===0&&<p className="muted empty-state">Você ainda não fez nenhuma solicitação.</p>}
+    {!historyLoading&&!historyError&&(history?.length??0)>0&&<div>
+      {history!.map(r=><div className="list-line" key={r.id}>
         <div className="list-icon"><ClipboardList size={18}/></div>
-        <div><strong>{(LGPD_KINDS.find(k=>k.value===r.kind)||{label:r.kind}).label}</strong>
-          <small>Protocolo {protocol(r.id)} • resposta até {fmt(r.due_at)}</small></div>
+        <div><strong>{kindLabel(r.kind)}</strong><small>{detail(r)}</small></div>
         <span className="small-pill">{REQUEST_STATUS[r.status]||r.status}</span>
-      </div>)}</div>
+      </div>)}
     </div>}
     <form className="stack gap-4" onSubmit={submit}>
       <label>O que você deseja fazer<select value={kind} onChange={e=>setKind(e.target.value)}>
@@ -401,6 +531,145 @@ function ConsentsPanel({token,onAuthFail}:{token:string;onAuthFail:()=>void}){
 }
 
 /* -------------------------------------------------------------------------
+ * Painel autenticado — NOTIFICAÇÕES (ST-P1-008): preferências por canal
+ * (GET/PUT /portal/me/notifications — opt-out de serviço, opt-in de marketing)
+ * + comprovação de entrega real (GET /portal/me/notifications/history).
+ * ---------------------------------------------------------------------- */
+function NotificationsPanel({token,onAuthFail}:{token:string;onAuthFail:()=>void}){
+  const [prefs,setPrefs]=useState<NotificationPrefs|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [saving,setSaving]=useState('');
+  const [saveError,setSaveError]=useState('');
+  const [history,setHistory]=useState<NotificationHistoryItem[]|null>(null);
+  const [historyLoading,setHistoryLoading]=useState(true);
+  const [historyError,setHistoryError]=useState('');
+  async function load(){
+    setLoading(true);setError('');
+    try{setPrefs((await portalCall<{prefs:NotificationPrefs}>('/portal/me/notifications',token)).prefs);}
+    catch(e){
+      if(portalAuthFailed(e,onAuthFail))return;
+      setPrefs(null);setError(sectionErrorText(e));
+    }finally{setLoading(false);}
+  }
+  async function loadHistory(){
+    setHistoryLoading(true);setHistoryError('');
+    try{setHistory(await portalCall<NotificationHistoryItem[]>('/portal/me/notifications/history',token));}
+    catch(e){
+      if(portalAuthFailed(e,onAuthFail))return;
+      setHistory(null);setHistoryError(sectionErrorText(e));
+    }finally{setHistoryLoading(false);}
+  }
+  useEffect(()=>{void load();void loadHistory();},[]);
+  /** Toggle otimista: aplica na hora, confirma com o prefs do servidor (200);
+   *  falha → reverte ao estado anterior + banner de erro (nunca fica "falso-positivo"). */
+  async function setPref(key:'whatsapp'|'email'|'sms'|'marketingOptIn',value:boolean){
+    if(!prefs)return;
+    const previous=prefs;
+    setSaving(key);setSaveError('');
+    setPrefs({...prefs,[key]:value});
+    try{
+      const r=await portalCall<{prefs:NotificationPrefs}>('/portal/me/notifications',token,'PUT',{[key]:value});
+      setPrefs(r.prefs);
+    }catch(e){
+      if(portalAuthFailed(e,onAuthFail))return;
+      setPrefs(previous);
+      setSaveError(sectionErrorText(e));
+    }finally{setSaving('');}
+  }
+  const CHANNELS=[
+    {key:'whatsapp' as const,label:'WhatsApp',hint:'Avisos de consulta e resultados pelo WhatsApp.'},
+    {key:'email' as const,label:'E-mail',hint:'Lembretes e comunicados no seu e-mail.'},
+    {key:'sms' as const,label:'SMS',hint:'Mensagens curtas no seu celular.'}
+  ];
+  return <div className="panel">
+    <div className="panel-title"><h2>Notificações</h2><Bell size={19}/></div>
+    <p className="muted">Escolha como a clínica fala com você. Mensagens de serviço (consultas e resultados) são opcionais — qualquer canal pode ser desligado. Marketing só é enviado se você aceitar (opt-in).</p>
+    {loading&&<p className="muted" role="status">Carregando suas preferências…</p>}
+    {!loading&&error&&<div className="stack gap-3"><InlineError text={error}/>
+      <div><button type="button" className="secondary-button" onClick={()=>void load()}>Tentar novamente</button></div></div>}
+    {saveError&&<div className="stack gap-3 mt-8"><InlineError text={saveError}/>
+      <div><button type="button" className="secondary-button" onClick={()=>{setSaveError('');void load();}}>Recarregar preferências</button></div></div>}
+    {!loading&&!error&&prefs&&<div>
+      {CHANNELS.map(c=><label className="list-line portal-consent" key={c.key}>
+        <div className="list-icon"><Bell size={18}/></div>
+        <div><strong>{c.label}</strong><small>{c.hint}</small></div>
+        <div className="portal-consent-actions">
+          <span className="small-pill">{prefs[c.key]?'Ativo':'Desligado'}</span>
+          <input type="checkbox" checked={prefs[c.key]} disabled={saving===c.key}
+            aria-label={'Receber mensagens de serviço por '+c.label}
+            onChange={e=>void setPref(c.key,e.target.checked)}/>
+        </div>
+      </label>)}
+      <label className="list-line portal-consent">
+        <div className="list-icon"><ShieldCheck size={18}/></div>
+        <div><strong>Comunicações de marketing</strong><small>Ofertas e novidades da clínica — só recebo se eu aceitar (opt-in).</small></div>
+        <div className="portal-consent-actions">
+          <span className="small-pill">{prefs.marketingOptIn?'Aceito':'Não aceito'}</span>
+          <input type="checkbox" checked={prefs.marketingOptIn} disabled={saving==='marketingOptIn'}
+            aria-label="Aceito comunicações de marketing"
+            onChange={e=>void setPref('marketingOptIn',e.target.checked)}/>
+        </div>
+      </label>
+    </div>}
+    <span className="eyebrow">COMPROVAÇÃO DE ENTREGA</span>
+    {historyLoading&&<p className="muted" role="status">Carregando o histórico de mensagens…</p>}
+    {!historyLoading&&historyError&&<div className="stack gap-3"><InlineError text={historyError}/>
+      <div><button type="button" className="secondary-button" onClick={()=>void loadHistory()}>Tentar novamente</button></div></div>}
+    {!historyLoading&&!historyError&&history!==null&&history.length===0&&<p className="muted empty-state">Nenhuma mensagem foi gerada para você até agora.</p>}
+    {!historyLoading&&!historyError&&(history?.length??0)>0&&<div>
+      {history!.map(m=><div className="list-line" key={m.id}>
+        <div className="list-icon"><CheckCircle2 size={18}/></div>
+        <div><strong>{NOTIFY_TEMPLATE[m.template]||m.template}</strong>
+          <small>{NOTIFY_CHANNEL[m.channel]||m.channel} • {fmt(m.createdAt)}{m.status==='failed'?' • não completou — fale com a clínica':''}</small></div>
+        <span className="small-pill" role="img" title={m.status==='queued'?QUEUE_HONESTY:undefined}
+          aria-label={m.status==='queued'?QUEUE_HONESTY:NOTIFICATION_STATUS[m.status]||m.status}>
+          {NOTIFICATION_STATUS[m.status]||m.status}</span>
+      </div>)}
+    </div>}
+    <p className="muted footnote">Status real da fila do StarMed: <strong>Na fila</strong> — {QUEUE_HONESTY}; <strong>Enviada</strong> — só depois que o envio é processado; <strong>Falhou</strong> — o envio não completou. Nunca mostramos “entregue” sem confirmação.</p>
+  </div>;
+}
+
+/* -------------------------------------------------------------------------
+ * Painel autenticado — PERFIL (GET /portal/me/profile): somente leitura,
+ * campos mínimos do próprio cadastro (nada de senha, nada de outra conta).
+ * ---------------------------------------------------------------------- */
+function ProfilePanel({token,onAuthFail}:{token:string;onAuthFail:()=>void}){
+  const [profile,setProfile]=useState<PortalProfile|null>(null);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  async function load(){
+    setLoading(true);setError('');
+    try{setProfile(await portalCall<PortalProfile>('/portal/me/profile',token));}
+    catch(e){
+      if(portalAuthFailed(e,onAuthFail))return;
+      setProfile(null);setError(sectionErrorText(e));
+    }finally{setLoading(false);}
+  }
+  useEffect(()=>{void load();},[]);
+  const FIELDS=profile?[
+    {label:'Nome completo',value:profile.fullName||'Não informado'},
+    {label:'Data de nascimento',value:profile.birthDate?fmtDateOnly(profile.birthDate):'Não informada'},
+    {label:'Sexo (registro)',value:GENDER_LABEL[profile.administrativeGender??'']||'Não informado'},
+    {label:'Telefone',value:profile.phone||'Não informado'},
+    {label:'Convênio',value:profile.insuranceId||'Não informado'}
+  ]:[];
+  return <div className="panel">
+    <div className="panel-title"><h2>Meu perfil</h2><User size={19}/></div>
+    <p className="muted">Somente leitura. Precisa corrigir um dado? Faça uma solicitação de correção em “Solicitações de privacidade” ou fale com a clínica.</p>
+    {loading&&<p className="muted" role="status">Carregando seu perfil…</p>}
+    {!loading&&error&&<div className="stack gap-3"><InlineError text={error}/>
+      <div><button type="button" className="secondary-button" onClick={()=>void load()}>Tentar novamente</button></div></div>}
+    {!loading&&!error&&profile&&<div>
+      {FIELDS.map(f=><div className="list-line" key={f.label}>
+        <div><strong>{f.label}</strong><small>{f.value}</small></div>
+      </div>)}
+    </div>}
+  </div>;
+}
+
+/* -------------------------------------------------------------------------
  * Raiz do portal: sessão própria (sessionStorage) + composição dos painéis.
  * ---------------------------------------------------------------------- */
 export function PatientPortalPage({onBack}:{onBack?:()=>void}){
@@ -441,9 +710,11 @@ function PortalHome({session,online,onLogout,onAuthFail,onBack}:{session:PortalS
         <p>Consulte suas consultas, seus documentos e cuide da sua privacidade.</p></div></div>
       {!online&&<div className="notice error" role="status"><WifiOff size={17}/><span>Você está sem conexão. As informações podem estar desatualizadas.</span></div>}
       <div className="stack gap-5">
+        <ProfilePanel token={token} onAuthFail={onAuthFail}/>
         <AppointmentsPanel token={token} onAuthFail={onAuthFail}/>
         <RequestAppointmentPanel token={token} onAuthFail={onAuthFail}/>
         <DocumentsPanel token={token} onAuthFail={onAuthFail}/>
+        <NotificationsPanel token={token} onAuthFail={onAuthFail}/>
         <div className="content-grid">
           <LgpdRequestsPanel token={token} onAuthFail={onAuthFail}/>
           <ConsentsPanel token={token} onAuthFail={onAuthFail}/>

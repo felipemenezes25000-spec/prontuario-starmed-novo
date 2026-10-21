@@ -22,6 +22,9 @@ import { LgpdController, PatientLgpdController } from './lgpd';
 import { HospitalController } from './hospital';
 import { ProductController } from './product';
 import { EncounterPrescriptionsController, PatientPrescriptionsController, PrescriptionsController } from './prescriptions';
+import { TimelineController, DocumentsController } from './timeline';
+import { MedicationsController } from './medications';
+import { MpiCandidatesController, PatientMergeController } from './mpi';
 import { assertSecurityConfig } from './config';
 
 @Module({
@@ -31,6 +34,7 @@ import { assertSecurityConfig } from './config';
     FhirExtraController,SmartWellKnownController,SignatureController,SignatureVerifyController,InteropController,
     TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController,
     LgpdController,PatientLgpdController,EncounterPrescriptionsController,PatientPrescriptionsController,PrescriptionsController,
+    TimelineController,DocumentsController,MedicationsController,MpiCandidatesController,PatientMergeController,
     AuditController
   ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]

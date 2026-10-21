@@ -20,6 +20,7 @@ import { AiClinicalController } from './ai-clinical';
 import { StaffPortalController, PatientPortalController } from './portal';
 import { LgpdController, PatientLgpdController } from './lgpd';
 import { HospitalController } from './hospital';
+import { HospitalOrdersResultsController } from './orders';
 import { ProductController } from './product';
 import { EncounterPrescriptionsController, PatientPrescriptionsController, PrescriptionsController } from './prescriptions';
 import { TimelineController, DocumentsController } from './timeline';
@@ -35,6 +36,7 @@ import { assertSecurityConfig } from './config';
     TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController,
     LgpdController,PatientLgpdController,EncounterPrescriptionsController,PatientPrescriptionsController,PrescriptionsController,
     TimelineController,DocumentsController,MedicationsController,MpiCandidatesController,PatientMergeController,
+    HospitalOrdersResultsController,
     AuditController
   ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]

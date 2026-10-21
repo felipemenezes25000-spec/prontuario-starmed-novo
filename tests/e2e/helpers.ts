@@ -52,6 +52,9 @@ export async function api<T = unknown>(path: string, opts: ApiOpts = {}): Promis
 export type LoginResponse = { accessToken?: string; mfaRequired?: boolean; mfaToken?: string };
 
 export function login(email: string, password: string, expected = 201): Promise<LoginResponse> {
+  // Diagnóstico sem PHI (e-mails sintéticos): cada POST consome1 do orçamento
+  // de 10/15min do rate limit — o log permite auditar o consumo por run.
+  console.log(`[e2e:login] POST /auth/login → ${email}`);
   return api<LoginResponse>('/auth/login', { method: 'POST', body: { email, password }, expected });
 }
 
@@ -61,6 +64,9 @@ export function login(email: string, password: string, expected = 201): Promise<
  *  (orçamento de 10/15min por IP no rate limit de /auth/login). */
 const g = globalThis as unknown as { __starmedAdminToken?: string | null; __starmedDoctor?: { email: string; token: string } | null };
 export async function adminToken(): Promise<string> {
+  // Injetado pelo preflight do runner (env): resolve o isolamento de bundle por
+  // spec do Playwright — sem ele, cada arquivo pagava1 do orçamento de login.
+  if (process.env.E2E_PRESET_ADMIN_TOKEN) return process.env.E2E_PRESET_ADMIN_TOKEN;
   if (g.__starmedAdminToken) return g.__starmedAdminToken;
   const session = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
   if (!session.accessToken) throw new Error('login do admin não devolveu accessToken');
@@ -84,6 +90,8 @@ export async function createDoctor(admin: string, displayName: string): Promise<
  *  motivos do admin): uma única criação+login reusada por todas as jornadas;
  *  o orçamento de /auth/login é 10/15min por IP. Sessão sem MFA, sintética. */
 export async function sharedSetupDoctor(): Promise<{ email: string; token: string }> {
+  if (process.env.E2E_PRESET_DOCTOR_EMAIL && process.env.E2E_PRESET_DOCTOR_TOKEN)
+    return { email: process.env.E2E_PRESET_DOCTOR_EMAIL, token: process.env.E2E_PRESET_DOCTOR_TOKEN };
   if (g.__starmedDoctor) return g.__starmedDoctor;
   const email = await createDoctor(await adminToken(), 'Dr E2E Setup');
   const session = await login(email, DOCTOR_PASSWORD);

@@ -136,6 +136,18 @@ try {
     if (web.exitCode !== null) throw new Error(`preview da web encerrou cedo (exit ${web.exitCode}).\n${webLog.slice(-2000)}`);
   });
 
+  // Pré-setup de sessão: admin + doctor de setup logados UMA vez e injetados
+  // como env nos workers — determinístico contra o rate limit (10/15min) e
+  // imune ao isolamento de bundle por spec do Playwright.
+  console.log('[e2e] 5.5/6 preflight de sessão (admin + doctor de setup)');
+  const presetRaw = String(await run('node scripts/e2e/preflight.mjs', e2eEnv, { quiet: true })).trim();
+  const preset = JSON.parse(presetRaw.split('\n').filter(Boolean).pop() ?? '{}');
+  if (!preset.adminToken || !preset.doctorEmail || !preset.doctorToken)
+    throw new Error('preflight devolveu JSON incompleto: ' + presetRaw.slice(0, 200));
+  e2eEnv.E2E_PRESET_ADMIN_TOKEN = preset.adminToken;
+  e2eEnv.E2E_PRESET_DOCTOR_EMAIL = preset.doctorEmail;
+  e2eEnv.E2E_PRESET_DOCTOR_TOKEN = preset.doctorToken;
+
   console.log('[e2e] 6/6 playwright test');
   await run('npx playwright test --config tests/e2e/playwright.config.ts', e2eEnv);
   exitCode = 0;

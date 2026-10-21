@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
 import { Actor, audit, requireRole } from './security';
+import { OrderStatus, assertTransition, orderStatusSchema, validateTransition } from './orders';
 
 /** Módulo hospitalar: leitos, admissões (ADT), antimicrobianos 344/ANVISA e pedidos LIS/PACS. */
 
@@ -33,15 +34,9 @@ const orderSchema = z.object({
   description: z.string().trim().min(3).max(500),
   priority: z.enum(['routine', 'urgent']).default('routine')
 }).strict();
-const orderStatusSchema = z.object({
-  status: z.enum(['in_progress', 'completed', 'cancelled']),
-  resultSummary: z.string().trim().max(10000).optional(),
-  pacsUrl: z.string().url().max(2000).optional(),
-  // Resultado crítico (H-12 / J1 #12): ausente = não altera; true/false define o
-  // flag e QUALQUER novo resultado zera o reconhecimento anterior (obrigatório
-  // reconhecer de novo).
-  critical: z.boolean().optional()
-}).strict();
+// O schema ESTENDIDO de PATCH orders/:id/status (ciclo 023: resultValue/
+// resultReference/resultUnits/communicatedTo + campos legados preservados)
+// mora em orders.ts — fonte única compartilhada com a máquina de transições.
 
 export type AdmissionStatus = 'admitted' | 'transferred' | 'discharged';
 
@@ -56,16 +51,14 @@ export function discharge(current: AdmissionStatus): void {
   if (current !== 'admitted') throw new ConflictException('Alta exige admissão ativa');
 }
 
-export type OrderStatus = 'ordered' | 'in_progress' | 'completed' | 'cancelled';
-const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  ordered: ['in_progress', 'cancelled'],
-  in_progress: ['completed', 'cancelled'],
-  completed: [],
-  cancelled: []
-};
+// Ciclo completo do pedido diagnóstico (ST-P1-005): a máquina de transições
+// PURA vive em orders.ts (canTransition/ORDER_TRANSITIONS) e é compartilhada
+// com o controller de resultados. Reexporta para os call sites/testes atuais.
+export { ORDER_TRANSITIONS, canTransition } from './orders';
+export type { OrderStatus } from './orders';
+/** Mantém o contrato existente (hospital.test.ts): 409 'Transição inválida: a → b'. */
 export function orderTransition(current: OrderStatus, next: OrderStatus): void {
-  if (!ORDER_TRANSITIONS[current].includes(next))
-    throw new ConflictException(`Transição inválida: ${current} → ${next}`);
+  assertTransition(current, next);
 }
 
 export function occupancyRate(total: number, occupied: number): number {
@@ -250,6 +243,15 @@ export class HospitalController {
     return row.rows[0];
   }
 
+  /**
+   * Transição do ciclo do pedido diagnóstico (ST-P1-005). ESTENDIDO sem quebrar
+   * o smoke: ordered→in_progress com critical:true + ack continua funcionando.
+   * Regras por etapa (validação PURA em orders.validateTransition): preliminary/
+   * final exigem resultValue; final exige passar por preliminary; reviewed grava
+   * reviewed_by/at; communicated exige communicatedTo E — para crítico — o
+   * reconhecimento (critical-ack) prévio (J1 #12). Auditoria por transição +
+   * 'result.communicated' extra; nenhum texto clínico livre nos details.
+   */
   @Patch('orders/:id/status')
   async orderStatus(@Req() req: ReqWithActor, @Param('id') rawId: string, @Body() raw: unknown) {
     const actor = req.actor;
@@ -257,9 +259,23 @@ export class HospitalController {
     const id = parse(uuid, rawId);
     const body = parse(orderStatusSchema, raw);
     return this.db.tx(async c => {
-      const order = await c.query<any>('SELECT status FROM diagnostic_orders WHERE id=$1 AND org_id=$2 FOR UPDATE', [id, actor.org_id]);
+      const order = await c.query<any>(
+        `SELECT status, critical, critical_ack_at, preliminary_at
+           FROM diagnostic_orders WHERE id=$1 AND org_id=$2 FOR UPDATE`, [id, actor.org_id]);
       if (!order.rowCount) throw new NotFoundException('Pedido não encontrado');
-      orderTransition(order.rows[0].status as OrderStatus, body.status);
+      const current = order.rows[0];
+      assertTransition(current.status as OrderStatus, body.status);
+      // Efeitos desta MESMA transação nas regras de payload: marcar critical=true
+      // zera o ack (comportamento legado preservado) — logo, comunicar um crítico
+      // recém-marcado exige reconhecer ANTES (ou em chamada anterior).
+      const effectiveCritical = body.critical === undefined ? current.critical === true : body.critical;
+      const effectiveAckAt = body.critical === true ? null : current.critical_ack_at;
+      const errors = validateTransition({
+        from: current.status as OrderStatus, to: body.status,
+        payload: { resultValue: body.resultValue, communicatedTo: body.communicatedTo },
+        order: { critical: effectiveCritical, criticalAckAt: effectiveAckAt }
+      });
+      if (errors.length) throw new ConflictException(errors.join(' '));
       const updated = await c.query<any>(
         `UPDATE diagnostic_orders
             SET status=$3,
@@ -268,12 +284,32 @@ export class HospitalController {
                 critical=CASE WHEN $6::boolean IS NULL THEN critical ELSE $6 END,
                 critical_ack_by=CASE WHEN $6::boolean IS NULL THEN critical_ack_by ELSE NULL END,
                 critical_ack_at=CASE WHEN $6::boolean IS NULL THEN critical_ack_at ELSE NULL END,
+                result_value=CASE WHEN $7::text IS NULL THEN result_value ELSE $7 END,
+                result_reference=CASE WHEN $8::text IS NULL THEN result_reference ELSE $8 END,
+                result_units=CASE WHEN $9::text IS NULL THEN result_units ELSE $9 END,
+                preliminary_at=CASE WHEN $3='preliminary' THEN now() ELSE preliminary_at END,
+                final_at=CASE WHEN $3='final' THEN now() ELSE final_at END,
+                reviewed_by=CASE WHEN $3='reviewed' THEN $10::uuid ELSE reviewed_by END,
+                reviewed_at=CASE WHEN $3='reviewed' THEN now() ELSE reviewed_at END,
+                communicated_to=CASE WHEN $3='communicated' THEN $11 ELSE communicated_to END,
+                communicated_at=CASE WHEN $3='communicated' THEN now() ELSE communicated_at END,
                 updated_at=now()
           WHERE id=$1 AND org_id=$2
-          RETURNING id,status,critical,critical_ack_at,updated_at`,
-        [id, actor.org_id, body.status, body.resultSummary ?? null, body.pacsUrl ?? null, body.critical ?? null]);
+          RETURNING id,status,critical,critical_ack_at,result_value,result_reference,result_units,
+                    preliminary_at,final_at,reviewed_by,reviewed_at,communicated_to,communicated_at,updated_at`,
+        [id, actor.org_id, body.status, body.resultSummary ?? null, body.pacsUrl ?? null,
+         body.critical ?? null, body.resultValue ?? null, body.resultReference ?? null,
+         body.resultUnits ?? null, actor.id, body.communicatedTo ?? null]);
+      // Auditoria por transição (metadados estruturados; requestId automático).
+      await audit(c, actor, 'order.status.changed', 'diagnostic_order', id,
+        body.critical === undefined ? { from: current.status, to: body.status }
+          : { from: current.status, to: body.status, critical: body.critical });
+      // Compat: o audit legado por status permanece para os E2E/smoke existentes.
       await audit(c, actor, 'hospital.order.' + body.status, 'diagnostic_order', id,
         body.critical === undefined ? { status: body.status } : { status: body.status, critical: body.critical });
+      if (body.status === 'communicated')
+        await audit(c, actor, 'result.communicated', 'diagnostic_order', id,
+          { orderId: id, communicatedTo: body.communicatedTo });
       return updated.rows[0];
     });
   }
@@ -318,16 +354,25 @@ export class HospitalController {
     return rows.rows;
   }
 
+  /** Filtros: patientId/status (existentes) + critical/priority (ST-P1-005).
+   *  Retorna as colunas do ciclo 023 (resultado estruturado + carimbos por etapa). */
   @Get('orders')
-  async listOrders(@Req() req: ReqWithActor, @Query('patientId') patientId?: string, @Query('status') status?: string) {
+  async listOrders(@Req() req: ReqWithActor, @Query('patientId') patientId?: string, @Query('status') status?: string,
+    @Query('critical') critical?: string, @Query('priority') priority?: string) {
     const actor = req.actor;
     requireRole(actor, ['admin', 'doctor', 'nurse']);
     const filters = ['org_id=$1'];
     const params: unknown[] = [actor.org_id];
     if (patientId) { params.push(parse(uuid, patientId)); filters.push(`patient_id=$${params.length}`); }
     if (status) { params.push(status); filters.push(`status=$${params.length}`); }
+    if (critical === 'true' || critical === 'false') { params.push(critical === 'true'); filters.push(`critical=$${params.length}`); }
+    if (priority === 'routine' || priority === 'urgent') { params.push(priority); filters.push(`priority=$${params.length}`); }
     const rows = await this.db.query(
-      `SELECT id,order_type,loinc_code,description,status,priority,result_summary,pacs_url,critical,critical_ack_at,ordered_at,updated_at
+      `SELECT id,patient_id,order_type,loinc_code,description,status,priority,result_summary,pacs_url,
+              critical,critical_ack_by,critical_ack_at,
+              result_value,result_reference,result_units,
+              preliminary_at,final_at,reviewed_by,reviewed_at,communicated_at,communicated_to,result_document_id,
+              ordered_at,updated_at
        FROM diagnostic_orders WHERE ${filters.join(' AND ')} ORDER BY ordered_at DESC LIMIT 200`, params);
     return rows.rows;
   }

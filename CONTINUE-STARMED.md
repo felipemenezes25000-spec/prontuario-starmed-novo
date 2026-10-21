@@ -248,10 +248,15 @@ corrigido com allowlist justificado, **nenhum gate desligado**. Run IDs em
   `globalThis` (bundle por arquivo do Playwright estourava o rate limit de login).
   **Validação: `npm test` 129/129 · build ✓ · E2E 11/11 ✓.**
 
-**Próximo:** push do marco F2b → CI verde → run IDs → **Fase 3 (Exames e
-Resultados: hospital.ts + orders.ts + migração 023 + Results.tsx + ciclo
-pedido→…→comunicado + críticos com escalação + PDF em clinical_documents + LIS/PACS
-desligado documentado)**.
+**Próximo:** ~~push do marco F2b~~ **F2b ACEITO**: push `88dc3e2→0823e98` ·
+run `39521070197` ✗ (1 asserção de heading, causa documentada) → fix `39521450670`
+✓ 6/6 (E2E 11/11) + re-run ✓ + docs `39521993685` ✓ = 3 verdes consecutivas.
+**Fase 3 EM VOO** (subagente: `hospital.ts` + `orders.ts` + `results.test.ts` +
+`Results.tsx`; contrato `database/023_diagnostic_results_cycle.sql` já escrito pelo
+orquestrador — ciclo pedido→…→comunicado, PDF em clinical_documents (gatilho 022),
+outbox DLQ + circuit breaker LIS/PACS nasce desligado). Integração pendente:
+main.ts, App.tsx (view Resultados), package.json (results.test.ts), 023 local,
+bateria completa, E2E jornada6.
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

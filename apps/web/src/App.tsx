@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, HeartPulse, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Pill, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
+import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, FlaskConical, HeartPulse, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Pill, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
 import { api, ApiError, EVENT_SESSION_EXPIRED, type LoginResponse, type Session, type User, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
@@ -7,9 +7,10 @@ import { TeleconsultPage, HospitalPage, TemplatesPage, MetricsPage, LgpdPage } f
 import { SecurityPage } from './pages/Security';
 import { PrescriptionsPage } from './pages/Prescriptions';
 import { Record360Page } from './pages/Record360';
+import { ResultsPage } from './pages/Results';
 import { PatientPortalPage } from './pages/PatientPortal';
 
-type View='dashboard'|'patients'|'record'|'record360'|'prescriptions'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd'|'security';
+type View='dashboard'|'patients'|'record'|'record360'|'prescriptions'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'results'|'templates'|'metrics'|'lgpd'|'security';
 type Banner={text:string;kind:'success'|'error'|'info'};
 type Draft={expectedVersion:number;operationId:string;templateId:string;sections:Record<string,string>};
 const mkId=()=>crypto.randomUUID();
@@ -172,6 +173,7 @@ function Nav({view,onView,role}:{view:View;onView:(v:View)=>void;role:string}){
     {key:'assistant',label:'Assistente de IA',icon:Sparkles,allowed:role==='doctor'},
     {key:'teleconsult',label:'Teleconsulta',icon:Video,allowed:role==='doctor'||role==='nurse'||role==='admin'},
     {key:'hospital',label:'Hospitalar',icon:BedDouble,allowed:role==='doctor'||role==='nurse'||role==='admin'},
+    {key:'results',label:'Resultados',icon:FlaskConical,allowed:role==='doctor'||role==='nurse'||role==='admin'},
     {key:'templates',label:'Templates',icon:FileSignature,allowed:role==='doctor'||role==='admin'},
     {key:'metrics',label:'Métricas',icon:Activity,allowed:role==='doctor'||role==='admin'},
     {key:'lgpd',label:'LGPD',icon:ShieldCheck,allowed:true},
@@ -532,7 +534,7 @@ export default function App(){
     </aside>
     <div className="workspace">
       <header className="topbar">
-        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',record360:'Prontuário 360°',prescriptions:'Prescrições',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD',security:'Segurança'} as const)[view]}</strong></div>
+        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',record360:'Prontuário 360°',prescriptions:'Prescrições',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',results:'Resultados',templates:'Templates',metrics:'Métricas',lgpd:'LGPD',security:'Segurança'} as const)[view]}</strong></div>
         <div className="topbar-right"><span className={'status-dot '+(serverReady?'':'offline')}/>{serverReady?'API disponível':'API indisponível'} <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="content">
@@ -702,6 +704,7 @@ export default function App(){
         </section>}
         {view==='teleconsult'&&<TeleconsultPage session={session!} alert={alert}/>}
         {view==='hospital'&&<HospitalPage session={session!} alert={alert}/>}
+        {view==='results'&&<ResultsPage session={session!} alert={alert}/>}
         {view==='templates'&&<TemplatesPage session={session!} alert={alert}/>}
         {view==='metrics'&&<MetricsPage session={session!} alert={alert}/>}
         {view==='lgpd'&&<LgpdPage session={session!} patients={patients} alert={alert}/>}

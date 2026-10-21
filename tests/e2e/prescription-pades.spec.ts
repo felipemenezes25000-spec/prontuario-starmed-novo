@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
-import { DOCTOR_PASSWORD, adminToken, api, caFiles, createDoctor, login, nonce } from './helpers';
+import { DOCTOR_PASSWORD, adminToken, api, caFiles, nonce, sharedSetupDoctor } from './helpers';
 
 test.describe('Jornada 2 — prescrição completa + PAdES', () => {
   const medName = 'Dipirona E2E 500 mg';
@@ -21,8 +21,11 @@ test.describe('Jornada 2 — prescrição completa + PAdES', () => {
 
   test.beforeAll(async () => {
     const admin = await adminToken();
-    doctorEmail = await createDoctor(admin, 'Dr E2E Receita');
-    doctorToken = (await login(doctorEmail, DOCTOR_PASSWORD)).accessToken!;
+    // Doctor compartilhado (preset do preflight): criar o paciente dá vínculo —
+    // dispensa login extra de setup nesta jornada (rate limit 10/15min).
+    const doc = await sharedSetupDoctor();
+    doctorEmail = doc.email;
+    doctorToken = doc.token;
     patientName = `Paciente E2E Receita ${nonce()}`;
     const patient = await api<{ id: string }>('/patients', {
       token: doctorToken, method: 'POST', expected: 201,

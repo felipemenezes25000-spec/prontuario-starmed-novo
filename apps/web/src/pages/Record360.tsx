@@ -78,7 +78,9 @@ const STATUS_LABEL:Record<string,string>={
   // Estados de encontro (schema) e de agenda/pedido (migrações 002..017).
   planned:'Planejado','in-progress':'Em andamento',finished:'Concluído',
   checked_in:'Check-in',no_show:'Não compareceu',
-  ordered:'Solicitado',in_progress:'Em execução'
+  ordered:'Solicitado',in_progress:'Em execução',
+  // Ciclo de exames/resultados (migração 023).
+  accepted:'Aceito',collected:'Coletado',reviewed:'Revisado',communicated:'Comunicado'
 };
 const statusLabel=(s:string)=>STATUS_LABEL[s]??s;
 

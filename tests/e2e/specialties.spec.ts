@@ -216,7 +216,8 @@ test.describe('Jornada 5 — cenários por especialidade', () => {
     await page.getByRole('button', { name: 'Iniciar', exact: true }).click();
 
     // Campos próprios da especialidade renderizam (EVOLUÇÃO MÉDICA: Ginecologia).
-    await expect(page.getByRole('heading', { name: 'Ginecologia' })).toBeVisible();
+    // exact:true — o cabeçalho do paciente também contém "Ginecologia" no nome.
+    await expect(page.getByRole('heading', { name: 'Ginecologia', exact: true })).toBeVisible();
     await expect(page.getByText('História ginecológica')).toBeVisible();
     await expect(page.getByText('Última menstruação (DMA)')).toBeVisible();
     // Honestidade: NENHUM texto de teratogenicidade — a regra clínica exige base

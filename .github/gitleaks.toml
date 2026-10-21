@@ -86,4 +86,10 @@ regexes = [
   # 39514881083); mesmo racional dos placeholders acima: literal exato, e um
   # segredo de verdade no mesmo arquivo continua sendo acusado.
   '''E2e-Doctor-P4ssw0rd-2026''',
+
+  # Segredo de TESTE no unit test do token de sala (teleconsult-room.test.ts:55):
+  # sobrescrita sintética de AUTH_SECRET que PROVA a rejeição de assinatura
+  # divergente (round-trip do ADR-0004) — não abre nada; roda fora de qualquer
+  # ambiente real e o valor não é usado em rede nenhuma.
+  '''outro-secret-totalmente-diferente-0123456789''',
 ]

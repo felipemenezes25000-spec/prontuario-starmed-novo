@@ -23,5 +23,19 @@ export default defineConfig({
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
     ...devices['Desktop Chrome'],
+    // Mídia FAKE para a jornada de teleconsulta (getUserMedia sem hardware real);
+    // permissões concedidas de antemão. Inofensivo para as demais jornadas.
+    permissions: ['camera', 'microphone'],
+    launchOptions: {
+      args: [
+        '--use-fake-ui-for-media-stream',
+        '--use-fake-device-for-media-stream',
+        '--allow-running-insecure-media',
+        // Dois contexts no MESMO host precisam dos candidatos host REAIS:
+        // sem esta flag o Chromium os ofusca com mDNS (.local) e o P2P entre
+        // contexts nunca conecta em ambiente de CI/headless.
+        '--disable-features=WebRtcHideLocalIpsWithMdns',
+      ],
+    },
   },
 });

@@ -278,9 +278,33 @@ run `39521070197` ✗ (1 asserção de heading, causa documentada) → fix `3952
 - **Validação local:** `npm test` **147/147** · build ✓ · `migrate` 023 (upgrade +
   dry-run) ✓ · **E2E 14/14 ✓** · **CI `39525441728` 6/6 (E2E 1m12s)** + re-run.
 
-**Próximo:** 3º verde (docs) → Fase 4 (Teleconsulta: `teleconsult.ts` +
-`Teleconsult*.tsx`, WebRTC browser↔browser, gravação desligada por padrão, E2E com
-fake media) → Fase 5 (Portal) → Fase 6 (Interop) → Fase 7 (UX/WCAG+Métricas).
+**Próximo:** 3º verde (docs) → **Fase 4 — Teleconsulta ENTREGUE (ver §I)** → Fase 5
+(Portal) → Fase 6 (Interop) → Fase 7 (UX/WCAG+Métricas).
+
+### I. FASE 4 — TELECONSULTA (21/10/2026, mesma sessão) — ENTREGUE (implementada pelo orquestrador; subagente morreu sem escrever)
+
+- **Mídia real**: `TeleconsultRoom.tsx` (staff, props iguais ao antigo page) +
+  `TeleconsultPatient.tsx` (público via `#teleconsult=<roomId>`, rota nova no App)
+  + hook `useTeleconsultCall` (getUserMedia, RTCPeerConnection, polling de
+  signals, badges exatos). **E2E prova WebRTC de verdade** (Conectado + trilha
+  remota) com mídia fake + flag `--disable-features=WebRtcHideLocalIpsWithMdns`.
+- **Backend** (`teleconsult.ts`): token de sala4h do paciente
+  (`X-Teleconsult-Token` — no CORS!), endpoints `/signals/patient` @Public,
+  `GET /teleconsult/ice-config` (env; ausente→P2P sem credencial), join
+  `open`=entrada sem transição, convite consumido SÓ após validações.
+- **Bugs latentes corrigidos (nunca exercitados antes)**: convite `WHERE` com id da
+  sala (0 linhas — convite nunca existiu), `$3` órfão (500 criar sala), sinais sem
+  `org_id` (NOT NULL desde018), cursor de seq avançando antes de tratar (perda
+  permanente de oferta), CORS sem `X-Teleconsult-Token` (3ª classe E2E-only).
+- **Gravação DECIDIDAMENTE fora** (pendência DPO/direção clínica — ADR-0004):
+  UI declara "Gravação: desligada (padrão deste ambiente…)".
+- **Validação local:** `npm test` **152/152** (+5 puros de teleconsult) · build ✓ ·
+  **E2E 16/16 ✓** · login budget **9/10** determinístico · ADR-0004.
+
+**Próximo:** push F4 → CI6jobs → run IDs (3 verdes) → **Fase 5 (Portal do
+paciente: `portal.ts` + `lgpd.ts` + `PatientPortal.tsx` — conteúdo de documento
+com bytes+re-hash, histórico LGPD, preferências de notificação, opt-out)** →
+Fase 6 (Interop) → Fase 7 (UX/WCAG+Métricas).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

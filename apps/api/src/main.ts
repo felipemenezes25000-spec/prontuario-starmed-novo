@@ -59,7 +59,9 @@ async function bootstrap(){
   // X-Break-Glass-Reason: sem ele o retry do painel de break-glass é BLOQUEADO pelo
   // preflight quando web e API estão em origens diferentes (a UI nunca funcionou
   // cross-origin nesse fluxo — E2E descobriu; o smoke via curl não passa por CORS).
-  app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,PATCH,OPTIONS',allowedHeaders:'Authorization,Content-Type,X-Break-Glass-Reason'});
+  // X-Teleconsult-Token: token de sala do paciente na sinalização WebRTC — header
+  // custom fora da lista também morria no preflight ("Failed to fetch" no poll).
+  app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,PATCH,OPTIONS',allowedHeaders:'Authorization,Content-Type,X-Break-Glass-Reason,X-Teleconsult-Token'});
   // Rate limit DISTRIBUÍDO (P0-07): contador em Postgres (021), compartilhado
   // entre instâncias — mesmas rotas e mesmos limites de antes, sem segredo novo.
   const rateLimiter=(route:string,message:string,limit:number,minutes:number)=>

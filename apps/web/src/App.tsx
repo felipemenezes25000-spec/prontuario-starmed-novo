@@ -3,7 +3,9 @@ import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, 
 import { api, ApiError, EVENT_SESSION_EXPIRED, type LoginResponse, type Session, type User, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
-import { TeleconsultPage, HospitalPage, TemplatesPage, MetricsPage, LgpdPage } from './pages/Fronts';
+import { HospitalPage, TemplatesPage, MetricsPage, LgpdPage } from './pages/Fronts';
+import { TeleconsultPage } from './pages/TeleconsultRoom';
+import { TeleconsultPatient } from './pages/TeleconsultPatient';
 import { SecurityPage } from './pages/Security';
 import { PrescriptionsPage } from './pages/Prescriptions';
 import { Record360Page } from './pages/Record360';
@@ -519,6 +521,12 @@ export default function App(){
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
   }
   // Área do paciente: rota/view SEM sessão staff — sessão própria em PatientPortalPage.
+  // Rota PÚBLICA da teleconsulta do paciente: `#teleconsult=<roomId>` (link
+  // compartilhado pela equipe — a entrada continua exigindo o convite
+  // single-use; nada de sessão staff nesta tela).
+  const teleconsultRoom = /^#teleconsult=([0-9a-fA-F-]{36})$/.exec(window.location.hash)?.[1];
+  if(teleconsultRoom) return <TeleconsultPatient roomId={teleconsultRoom} alert={alert}/>;
+
   if(!session)return entryScreen==='portal'
     ? <PatientPortalPage onBack={()=>setEntryScreen('staff')}/>
     : <Access onLogin={startSession} notice={accessNotice||undefined} onPatientPortal={()=>setEntryScreen('portal')}/>;

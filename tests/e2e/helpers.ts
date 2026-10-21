@@ -55,11 +55,16 @@ export function login(email: string, password: string, expected = 201): Promise<
   return api<LoginResponse>('/auth/login', { method: 'POST', body: { email, password }, expected });
 }
 
-/** Admin sintético já bootstrAPado pelo runner (organização descartável). */
+/** Admin sintético já bootstrAPado pelo runner (organização descartável).
+ *  Sessão cacheada no worker (workers:1): 4 specs ×1 login custaria 4 do
+ *  orçamento de 10/15min do rate limit de /auth/login — com cache são 1. */
+let cachedAdminToken: string | null = null;
 export async function adminToken(): Promise<string> {
+  if (cachedAdminToken) return cachedAdminToken;
   const session = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
   if (!session.accessToken) throw new Error('login do admin não devolveu accessToken');
-  return session.accessToken;
+  cachedAdminToken = session.accessToken;
+  return cachedAdminToken;
 }
 
 /** Cria um médico sintético (sem MFA) e devolve o e-mail usado. */

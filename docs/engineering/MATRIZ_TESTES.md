@@ -66,9 +66,10 @@ migrações, bootstrap, API :3001, web :5174). Detalhes das jornadas: ver os spe
 
 | Jornada | Cenário (sintético) | Esperado | Evidência |
 |---|---|---|---|
-| `login-mfa.spec.ts` | login + etapa TOTP (código errado → erro sem sessão; certo → dashboard) | sessão só após 2º fator | **local 3/3 ✓** (21/10) · CI no run do marco |
-| `prescription-pades.spec.ts` | rascunho → alerta de segurança → override → atestar → PDF → **PAdES positivo (CA de teste)** → verify-pades → **adulteração detectada em 2 camadas** (re-hash + CMS com sha256 forjado) + restauração | `signatureValid:false` após adulteração; true após restaurar | **local 3/3 ✓** · CI no run do marco |
-| `break-glass.spec.ts` | 403 sem vínculo → painel → justificativa ≥20 → prontuário + auditoria `access.breakglass` | evento auditado com requestId | **local 3/3 ✓** · CI no run do marco |
+| `login-mfa.spec.ts` | login + etapa TOTP (código errado → erro sem sessão; certo → dashboard) | sessão só após 2º fator | **local 3/3 ✓** + **CI `39515333383` job `E2E — Playwright` ✓** (re-run ✓) |
+| `prescription-pades.spec.ts` | rascunho → alerta de segurança → override → atestar → PDF → **PAdES positivo (CA de teste)** → verify-pades → **adulteração detectada em 2 camadas** (re-hash + CMS com sha256 forjado) + restauração | `signatureValid:false` após adulteração; true após restaurar | **local 3/3 ✓** + **CI `39515333383` ✓** |
+| `break-glass.spec.ts` | 403 sem vínculo → painel → justificativa ≥20 → prontuário + auditoria `access.breakglass` | evento auditado com requestId | **local 3/3 ✓** + **CI `39515333383` ✓** |
+| `record360.spec.ts` (F2) | **UI:** timeline com status honesto (prescrição/alergia/documento), alto risco com alergia+medicação+alerta, **aviso `none_recorded` explícito** ("NÃO significa ausência de alergia"), documentos com **v1 pelo gatilho do 022**. **Backend:** `types=foo`→400, meta `signatureStatus:'attested'`, candidatas MPI (mesmo nome+nascimento), **merge de corrente** (movedCounts.encounters=1, encontro movido, perdedor preservado, re-merge→409, auditoria `patient.merged` com requestId) | jornada 4 completa | **local 5/5 ✓** (21/10) · CI no push do marco F2 |
 
 ## 6. Segurança de dependências/segredos (CI)
 

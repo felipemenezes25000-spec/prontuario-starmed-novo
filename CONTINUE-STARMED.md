@@ -218,8 +218,28 @@ Run `39514881083` ficou vermelho só no Gitleaks (2 achados sintéticos do E2E) 
 corrigido com allowlist justificado, **nenhum gate desligado**. Run IDs em
 `docs/engineering/EXECUCAO_2026-10-21.md` §0.1.
 
-**Próximo:** Fase 2 (Prontuário 360°: `timeline.ts`/`medications.ts`/`mpi.ts` +
-migração `022` + `Record360.tsx`) na ordem do grafo do PROMPT V3.
+### G. FASE 2 — PRONTUÁRIO 360° (21/10/2026, mesma sessão) — CORE ENTREGUE
+
+- **`database/022_record360_mpi.sql`** (orquestrador): `patients.merged_into_id` +
+  `patient_merges` + `document_versions` append-only **com gatilho** (INSERT → v1,
+  embarque PAdES → v2) + RLS tier1; validada em clean base (CI `39516682187` ✓) e
+  upgrade 021→022 local ✓.
+- **Backend (subagente, revisado):** `timeline.ts` (UNION ALL de 7 tipos, care
+  context + audit, zod strict), `medications.ts` (`allergyState:'none_recorded'` =
+  registro ausente NUNCA "sem alergias"; alertas reusando `evaluatePrescriptionSafety`),
+  `mpi.ts` (candidatas nome+nascimento; merge **corrente única, fail-closed, 14
+  tabelas, NUNCA DELETE**), `record360.test.ts` (12 testes puros).
+- **Web (subagente, revisado):** `Record360.tsx` (3 abas + estados + aviso H-04),
+  integração aditiva em App/api/styles; ajustes do orquestrador: Nav sem admin
+  (coerência com roles), vocabulário de status/docus.
+- **Integração (orquestrador):** registros em `main.ts` (5 controllers),
+  `record360.test.ts` no script `test`, fix TS `rowCount ?? 0`, ADR-0003.
+- **Validação local:** `npm test` **127/127** · build ✓ · **E2E 5/5** (jornada4:
+  UI 360 + `none_recorded` + gatilho v1 + merge com movedCounts/perdedor/re-merge409/auditoria)
+  · smoke + smoke:mfa ✓.
+
+**Próximo:** push do marco F2 → CI verde (6 jobs) → run IDs → cenários por
+especialidade (F2-b, com pendências clínicas nomeadas no ADR-0003) → Fase 3 (Exames).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

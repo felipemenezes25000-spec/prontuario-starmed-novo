@@ -92,3 +92,21 @@
 .agenda-cancel-form{display:flex;flex-direction:column;gap:10px;margin-top:11px;padding-top:11px;border-top:1px dashed #e3ecef}
 .agenda-cancel-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
 @media(max-width:720px){.agenda-actions{gap:10px}.agenda-cancel-buttons{flex-direction:column;align-items:stretch}.agenda-cancel-buttons .text-button{justify-content:center}}
+/* Prontuário 360° (ST-P1): abas, badges de severidade e histórico de versões de documentos. */
+.r360-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 16px}
+.r360-tab{background:#fff;border:1px solid #e7eef1;border-radius:9px;padding:9px 15px;font-size:12px;font-weight:700;color:#6b8692;cursor:pointer}
+.r360-tab:hover{border-color:#c8dde3;color:#183e4e}
+.r360-tab.r360-tab-active{background:#183e4e;border-color:#183e4e;color:#fff}
+.r360-summary{display:block;color:#6b8692;margin-top:3px;max-width:560px}
+.r360-badge-critical{background:#f7e3e1;color:#ac5149;border-radius:20px;padding:4px 10px;font-size:10px;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+.r360-subtitle{font-size:12px;font-weight:800;color:#183e4e;margin:20px 0 4px;padding-top:14px;border-top:1px solid #eef2f3}
+.r360-notice-warn{display:flex;align-items:flex-start;gap:10px;background:#fdf6ea;color:#8a5a17;border:1px solid #f0dfc0;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.6;margin:6px 0}
+.r360-notice-warn svg{flex-shrink:0;margin-top:1px}
+.r360-alert{display:flex;align-items:flex-start;gap:10px;border-radius:10px;padding:11px 13px;margin-top:9px;font-size:12px;line-height:1.55;border:1px solid}
+.r360-alert svg{flex-shrink:0;margin-top:1px}
+.r360-alert p{margin:2px 0 0}
+.r360-alert-block{background:#f7e3e1;color:#7d3a34;border-color:#eec4c0}
+.r360-alert-review_required{background:#fdf6ea;color:#8a5a17;border-color:#f0dfc0}
+.r360-alert-info{background:#eaf5f4;color:#15615a;border-color:#cfe7e4}
+.r360-versions{margin:4px 0 12px;padding:2px 14px 8px;border-left:2px solid #e7eef1}
+@media(max-width:720px){.r360-tabs{gap:6px}.r360-tab{flex:1 1 auto;text-align:center}}

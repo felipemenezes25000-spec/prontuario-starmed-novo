@@ -54,3 +54,28 @@ export type PatientProblem={
  id:string;display:string;code_system:string|null;code:string|null;
  clinical_status:string;verification_status:string;onset_date:string|null;recorded_at:string;
 };
+
+/* ---- Prontuário 360° (tipos do contrato fechado; UI consumidora: pages/Record360.tsx) ---- */
+/** meta é polimórfico por `kind`: prescription→signatureStatus; document→{sha256,versions};
+ *  exam→{priority,critical,status}. Campos ausentes quando o kind não os define. */
+export type TimelineMeta={
+ signatureStatus?:'none'|'attested'|'pades';
+ sha256?:string;versions?:number;
+ priority?:string;critical?:boolean;status?:string;
+};
+/** GET /patients/:patientId/timeline?types=…&limit=50 */
+export type TimelineItem={
+ kind:'encounter'|'note'|'prescription'|'allergy'|'problem'|'exam'|'document'|string;
+ id:string;at:string;status:string;author?:string;title:string;summary?:string;meta?:TimelineMeta;
+};
+/** GET /patients/:patientId/medications */
+export type MedicationsBundle={
+ allergyState:'recorded'|'none_recorded';
+ allergies:{substance:string;criticality:string;clinicalStatus:string;verificationStatus:string}[];
+ activeMedications:{id:string;medicationName:string;dose:string;frequency:string;route:string;status:string;signatureStatus:string;prescribedAt:string}[];
+ alerts:{level:'info'|'review_required'|'block';code:string;message:string}[];
+};
+/** GET /patients/:patientId/documents */
+export type DocumentRow={id:string;doc_type:string;sha256:string;created_at:string;versions:number};
+/** GET /patients/:patientId/documents/:documentId/versions */
+export type DocumentVersions={documentId:string;versions:{version:number;sha256:string;change_kind:string;created_at:string}[];note?:string};

@@ -6,9 +6,10 @@ import { pendingCount, queueDraft, syncDrafts } from './offline';
 import { TeleconsultPage, HospitalPage, TemplatesPage, MetricsPage, LgpdPage } from './pages/Fronts';
 import { SecurityPage } from './pages/Security';
 import { PrescriptionsPage } from './pages/Prescriptions';
+import { Record360Page } from './pages/Record360';
 import { PatientPortalPage } from './pages/PatientPortal';
 
-type View='dashboard'|'patients'|'record'|'prescriptions'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd'|'security';
+type View='dashboard'|'patients'|'record'|'record360'|'prescriptions'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'templates'|'metrics'|'lgpd'|'security';
 type Banner={text:string;kind:'success'|'error'|'info'};
 type Draft={expectedVersion:number;operationId:string;templateId:string;sections:Record<string,string>};
 const mkId=()=>crypto.randomUUID();
@@ -165,6 +166,7 @@ function Nav({view,onView,role}:{view:View;onView:(v:View)=>void;role:string}){
     {key:'dashboard',label:'Visão geral',icon:LayoutDashboard,allowed:true},
     {key:'patients',label:'Pacientes',icon:Users,allowed:true},
     {key:'record',label:'Prontuário',icon:ClipboardList,allowed:role==='doctor'||role==='nurse'},
+    {key:'record360',label:'Prontuário 360°',icon:Activity,allowed:role==='doctor'||role==='nurse'},
     {key:'prescriptions',label:'Prescrições',icon:Pill,allowed:role==='doctor'||role==='admin'},
     {key:'agenda',label:'Agenda',icon:CalendarDays,allowed:true},
     {key:'assistant',label:'Assistente de IA',icon:Sparkles,allowed:role==='doctor'},
@@ -530,7 +532,7 @@ export default function App(){
     </aside>
     <div className="workspace">
       <header className="topbar">
-        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',prescriptions:'Prescrições',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD',security:'Segurança'} as const)[view]}</strong></div>
+        <div className="breadcrumb"><span>StarMed</span><span className="slash">/</span><strong>{({dashboard:'Visão geral',record:'Prontuário',record360:'Prontuário 360°',prescriptions:'Prescrições',patients:'Pacientes',agenda:'Agenda',team:'Equipe',assistant:'Assistente de IA',teleconsult:'Teleconsulta',hospital:'Hospitalar',templates:'Templates',metrics:'Métricas',lgpd:'LGPD',security:'Segurança'} as const)[view]}</strong></div>
         <div className="topbar-right"><span className={'status-dot '+(serverReady?'':'offline')}/>{serverReady?'API disponível':'API indisponível'} <div className="avatar">{(user?.displayName||user?.email||'S').slice(0,1).toUpperCase()}</div></div>
       </header>
       <main className="content">
@@ -574,6 +576,7 @@ export default function App(){
           <div className="record-grid"><div className="stack gap-5"><div className="panel"><div className="panel-title"><h2>Atendimentos</h2><span className="small-pill">{encounters.length}</span></div>
             {encounters.length===0?<p className="muted">Nenhum atendimento para este paciente.</p>:encounters.map(e=><button className={'encounter-row '+(encounter?.id===e.id?'selected':'')} onClick={()=>void openEncounter(e)} key={e.id}><div className="list-icon"><FilePenLine size={18}/></div><div><strong>{specialties[e.specialty as Specialty]?.name||e.specialty}</strong><small>{fmt(e.started_at)}</small></div><ArrowRight size={16}/></button>)}
             {(isDoctor||user?.role==='admin')&&patient&&<button type="button" className="text-button" onClick={()=>setView('prescriptions')}><Pill size={15}/> Prescrições do paciente</button>}
+            {patient&&<button type="button" className="text-button" onClick={()=>setView('record360')}><Activity size={15}/> Visão 360° do prontuário</button>}
           </div>
           <div className="panel">
             <div className="panel-title"><h2>Resumo clínico</h2><ShieldCheck size={19}/></div>
@@ -691,6 +694,11 @@ export default function App(){
             <button className="primary-button" disabled={loading} type="submit"><Sparkles size={17}/> Extrair informações</button></form>
             <p className="footnote muted">Desabilitado por padrão. Ativar exige configuração contratual do provedor, avaliação de privacidade e permissão na organização.</p>
           </div><div className="panel"><div className="panel-title"><h2>Sugestão para revisão</h2></div>{aiResult?<pre className="ai-json">{JSON.stringify(aiResult,null,2)}</pre>:<div className="empty-state"><Sparkles size={32}/><p>Nenhuma sugestão ainda.</p></div>}<p className="muted footnote">Nenhuma sugestão é registrada ou assinada automaticamente.</p></div></div>
+        </section>}
+        {view==='record360'&&<section>
+          <div className="page-heading"><div><span className="eyebrow">PRONTUÁRIO 360°</span><h1>Prontuário 360°</h1><p>Linha do tempo, alto risco e documentos em uma única visão consolidada.</p></div></div>
+          {!patient?<div className="panel empty-state"><ClipboardList size={35}/><h2>Selecione um paciente</h2><p>Comece pela área de pacientes para abrir o prontuário.</p><button className="primary-button" onClick={()=>setView('patients')}>Ir para pacientes <ArrowRight size={16}/></button></div>:
+          <Record360Page session={session!} alert={alert} patient={patient} onView={setView}/>}
         </section>}
         {view==='teleconsult'&&<TeleconsultPage session={session!} alert={alert}/>}
         {view==='hospital'&&<HospitalPage session={session!} alert={alert}/>}

@@ -9,6 +9,7 @@ import { TeleconsultPatient } from './pages/TeleconsultPatient';
 import { SecurityPage } from './pages/Security';
 import { PrescriptionsPage } from './pages/Prescriptions';
 import { Record360Page } from './pages/Record360';
+import { measureEvent } from './pages/perf-metrics';
 import { ResultsPage } from './pages/Results';
 import { PatientPortalPage } from './pages/PatientPortal';
 
@@ -336,14 +337,15 @@ export default function App(){
     try {
       // GET /encounters?patientId=, /patients/:id/allergies e /patients/:id/problems são rotas
       // de carregamento sujeitas a403 break-glass: o loader é repetido com o header no retry.
-      await runRecordLoad(async headers=>{
+      // Métrica 'open_record' (ST-P1-012): duração de abrir o prontuário, sem ids.
+      await measureEvent(token,'open_record',()=>runRecordLoad(async headers=>{
         const [visits,allergyRecords,problemRecords]=await Promise.all([
           api<Encounter[]>('/encounters?patientId='+encodeURIComponent(p.id),token,'GET',undefined,headers),
           api<PatientAllergy[]>('/patients/'+p.id+'/allergies',token,'GET',undefined,headers),
           api<PatientProblem[]>('/patients/'+p.id+'/problems',token,'GET',undefined,headers)
         ]);
         setEncounters(visits);setAllergies(allergyRecords);setProblems(problemRecords);
-      });
+      }));
     }catch(e){alert((e as Error).message,'error');}
   }
   async function openEncounter(e:Encounter){
@@ -384,7 +386,8 @@ export default function App(){
     if(!patient||!token)return;
     setLoading(true);
     try {
-      await api('/patients/'+patient.id+'/allergies',token,'POST',allergyForm);
+      // Métrica 'check_allergy' (ST-P1-012): registrar a alergia identificada.
+      await measureEvent(token,'check_allergy',()=>api('/patients/'+patient.id+'/allergies',token,'POST',allergyForm));
       setAllergyForm({substance:'',reaction:'',criticality:'unable-to-assess',verificationStatus:'unconfirmed'});
       alert('Alergia documentada. Verifique o estado de confirmação.','success');
       // GET /patients/:id/allergies — rota de prontuário:403 break-glass abre o painel de emergência.
@@ -438,7 +441,8 @@ export default function App(){
     if(!window.confirm('Confirma a revisão clínica e atestação? Uma nota assinada torna-se imutável. Salve as alterações antes.'))return;
     setLoading(true);
     try {
-      const signed=await api<ClinicalNote>('/encounters/'+encounter.id+'/notes/sign',token,'POST',{expectedVersion:note.version});
+      // Métrica 'sign_note' (ST-P1-012): concluir/atesta a evolução.
+      const signed=await measureEvent(token,'sign_note',()=>api<ClinicalNote>('/encounters/'+encounter.id+'/notes/sign',token,'POST',{expectedVersion:note.version}));
       setNote(signed);setSections(signed.content.sections);alert('Nota atestada e bloqueada para edição. Esta ação não é assinatura digital ICP-Brasil.','success');
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
   }

@@ -321,7 +321,7 @@ run `39521070197` ✗ (1 asserção de heading, causa documentada) → fix `3952
   controllers).
 
 **Próximo:** push F5 → CI →3 verdes → **Fase 6 (Interop) ENTREGUE (ver §K)** →
-Fase 7 (UX/WCAG+Métricas) → Fase 8 (IA/Hospitalar).
+**Fase 7 (UX/WCAG+Métricas) ENTREGUE (ver §L)** → Fase 8 (IA/Hospitalar).
 
 ### K. FASE 6 — INTEROPERABILIDADE (21/10/2026, mesma sessão) — ENTREGUE
 
@@ -344,9 +344,30 @@ Fase 7 (UX/WCAG+Métricas) → Fase 8 (IA/Hospitalar).
   validador **7/7+negativo** ✓ · migrações ✓.
 
 **Próximo:** push F6 → CI7jobs (primeira execução do `interop-fhir`) →3 verdes →
-**Fase 7 (UX/WCAG + MÉTRICAS ST-P1-012: auditoria axe+teclado+leitor de tela das
-jornadas críticas, estados loading/empty/error/denied/offline/conflict, métricas
-p50/p98 sem PHI)** → Fase 8 (IA governada + hospitalar).
+**Fase 7 ENTREGUE (§L)** → Fase 8 (IA governada + hospitalar).
+
+### L. FASE 7 — UX/WCAG + MÉTRICAS (21/10/2026, mesma sessão) — ENTREGUE (subagente morreu; orquestrador implementou em10 iterações axe)
+
+- **Jornada9 E2E** (`tests/e2e/a11y.spec.ts`, `@axe-core/playwright`):9 contextos,
+  serious/critical bloqueiam → **ZERO violações** (pré:63+ contrast +2 target-size).
+- **Correções** em `styles.css` (bloco final "Fase 7"): tokens escurecidos
+  (#5b6b75/#0b7a68/#0e7d70/#0b6e63/#17695f/#2e6b64/#275f7a), `target-size`≥24px e
+  **bug real de layout**: sidebar `height:100vh` SEM overflow → últimos itens
+  transbordavam para fundo claro (axe provou com bg=#f5f8fa) → `overflow-y:auto`
+  (≥721px). Navegação escura preservada (#a8c1ce =7.6:1 medido no DOM).
+- **Métricas sem PHI**: `perf-metrics.ts` (API: rota normalizada + `GET /metrics/perf`
+  admin com p50/p95/errorRate) + `pages/perf-metrics.ts` (enum fechado, beacons
+  fire-and-forget) + os5 eventos instrumentados (open_record, sign_note,
+  create_prescription, load_history, check_allergy) +3 testes puros.
+- **Doc**: `docs/design/WCAG-2.2-AA-AUDITORIA.md` (matriz antes/depois com ratios,
+  inventário de estados, contrato de métricas, limitações e pendências humanas).
+- **Validação local:** `npm test` **175/175** · build ✓ · **E2E21/21 (axe zerado)** ·
+  smoke+mfa ✓ · LOGIN_HITS=10 (limite exato — orçamento em tests/e2e).
+
+**Próximo:** push F7 → CI →3 verdes → **Fase 8 (IA governada: copiloto com
+provenance+revisão humana+auditoria, dataset sintético, defesa contra prompt
+injection; hospitalar: enfermagem/checagem/344 atrás de flag)** — depois fechar
+pendências externas nomeadas (ITI/ACT, RNDS, IdP, pentest, nomeações, SaMD).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

@@ -110,3 +110,45 @@
 .r360-alert-info{background:#eaf5f4;color:#15615a;border-color:#cfe7e4}
 .r360-versions{margin:4px 0 12px;padding:2px 14px 8px;border-left:2px solid #e7eef1}
 @media(max-width:720px){.r360-tabs{gap:6px}.r360-tab{flex:1 1 auto;text-align:center}}
+
+/* ============================================================ Fase 7 — WCAG 2.2 AA (ST-P1-012)
+   Auditoria axe (`color-contrast`, 63 nós serious nas jornadas críticas — ver
+   docs/design/WCAG-2.2-AA-AUDITORIA.md): texto normal exige4.5:1 sobre os fundos
+   claros (#ffffff / #f5f8fa). Tokens escurecidos preservando a identidade teal:
+     #5b6b75 →5.2:1 em #f5f8fa /5.5:1 em #fff (texto secundário)
+     #4d6472 →6.2:1 (navegação lateral sobre #f5f8fa)
+     #0b7a68 →5.3:1 (botão primário branco sobre teal)
+     #0e7d70 / #0b6e63 →5.0:1 /5.7:1 (texto de ação teal)
+   Blocos no FIM do arquivo: mesma especificidade → vencem as regras antigas;
+   estados com especificidade maior (hover/active) continuam mandando. */
+.muted{color:#5b6b75}
+small{color:#5b6b75}
+.list-line small,.patient-row small,.encounter-row small,.stat-card small,.stat-card span,
+.clinical-chip small,.patient-header small,.login-panel p,.security-note,.sso-divider,
+.breadcrumb,.topbar-right,.page-heading p,.footnote,.flow-line p,.footer,
+.mode-button,.notice.info{color:#5b6b75}
+.notice.info{color:#275f7a}
+/* Sidebar é ESCURA (#102b3e): a cor original #a8c1ce dá7.6:1 e NÃO entra aqui
+   (medição DOM em jornada9: todos os14 itens com bg rgb(16,43,62)).
+   BUG REAL de layout: height:100vh SEM overflow → com14 itens + nota de ambiente,
+   os últimos elementos TRANSBORDAM a caixa pintada e caem sobre o fundo CLARO da
+   página (axe media bg=#f5f8fa; ratio1.76) — corrigido com rolagem interna
+   (apenas viewport≥721px; no mobile a media query original manda com height:auto). */
+@media(min-width:721px){.sidebar{height:100vh;overflow-y:auto}}
+.mode-button.active{color:#0b6e63}
+.primary-button{background:#0b7a68}
+.text-button{color:#0e7d70}
+.page-heading .eyebrow,.panel .eyebrow,.patient-header .eyebrow,.eyebrow{color:#0b6e63}
+.hero .eyebrow{color:#11a991} /* contexto escuro: original passava (mantida) */
+.patient-header p,.empty-state p{color:#5b6b75}
+details summary{color:#17695f}
+.clinical-details summary{color:#17695f}
+.r360-summary{color:#5b6b75}
+.small-pill{color:#2e6b64}
+.search-field > button{color:#17695f}
+.search-field{color:#5b6b75} /* selects usam a classe direto: herdavam #95aab4 (2.3:1) */
+/* WCAG 2.2 target-size (2.5.8): alvos de toque ≥24px — text-buttons do
+   prontuário (Prescrições/Visão360) tinham altura só de glifo/ícone. */
+.text-button{min-height:24px}
+.r360-tab{color:#5b6b75} /* aba inativa: #6b8692 dava3.85:1 em #fff */
+

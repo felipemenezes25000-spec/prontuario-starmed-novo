@@ -4,6 +4,7 @@ import {
   api, ApiError,
   type DocumentRow, type DocumentVersions, type MedicationsBundle, type Patient, type Session, type TimelineItem
 } from '../api';
+import { measureEvent } from './perf-metrics';
 
 /**
  * PRONTUÁRIO 360° (P1/ST-P1-XXX parte web) — visão consolidada do paciente sobre
@@ -138,7 +139,8 @@ export function Record360Page({session,alert,patient,onView}:{
     setTlLoading(true);setTlError('');
     try{
       const q='/patients/'+patient.id+'/timeline?types=encounter,note,prescription,allergy,problem,exam,document&limit=50';
-      const rows=await api<TimelineItem[]>(q,token);
+      // Métrica 'load_history' (ST-P1-012): recuperar histórico consolidado.
+      const rows=await measureEvent(token,'load_history',()=>api<TimelineItem[]>(q,token));
       // Mais recente primeiro — a ordenação é da UI, não do backend.
       setItems([...rows].sort((a,b)=>new Date(b.at).getTime()-new Date(a.at).getTime()));
     }catch(e){setTlError(errText(e));}

@@ -149,7 +149,8 @@ try {
   e2eEnv.E2E_PRESET_DOCTOR_TOKEN = preset.doctorToken;
 
   console.log('[e2e] 6/6 playwright test');
-  await run('npx playwright test --config tests/e2e/playwright.config.ts', e2eEnv);
+  const extraArgs = process.env.E2E_GREP ? ['-g', process.env.E2E_GREP] : [];
+  await run(`npx playwright test --config tests/e2e/playwright.config.ts${extraArgs.map(a => ` ${a.includes(' ') ? JSON.stringify(a) : a}`).join('')}`, e2eEnv);
   exitCode = 0;
 } catch (e) {
   console.error(e.message ?? e);

@@ -23,6 +23,7 @@ import { HospitalController } from './hospital';
 import { HospitalOrdersResultsController } from './orders';
 import { ProductController } from './product';
 import { EncounterPrescriptionsController, PatientPrescriptionsController, PrescriptionsController } from './prescriptions';
+import { PerfMetricsController, perfMetricsMiddleware } from './perf-metrics';
 import { TimelineController, DocumentsController } from './timeline';
 import { MedicationsController } from './medications';
 import { MpiCandidatesController, PatientMergeController } from './mpi';
@@ -36,7 +37,7 @@ import { assertSecurityConfig } from './config';
     TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController,
     LgpdController,PatientLgpdController,EncounterPrescriptionsController,PatientPrescriptionsController,PrescriptionsController,
     TimelineController,DocumentsController,MedicationsController,MpiCandidatesController,PatientMergeController,
-    HospitalOrdersResultsController,
+    HospitalOrdersResultsController,PerfMetricsController,
     AuditController
   ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]
@@ -82,6 +83,9 @@ async function bootstrap(){
     res.setHeader('X-Request-Id',requestId);
     requestContext.run({requestId},next);
   });
+  // Métricas de desempenho SEM PHI (ST-P1-012): rota normalizada + duração;
+  // middleware no fim da cadeia (depois de reqId/contexto) e antes do listen.
+  app.use(perfMetricsMiddleware() as never);
   await app.listen(Number(process.env.API_PORT || 3001),'127.0.0.1');
   console.log('StarMed API ready on localhost');
 }

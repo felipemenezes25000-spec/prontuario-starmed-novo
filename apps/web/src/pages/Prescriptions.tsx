@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, AlertTriangle, ArrowRight, Ban, CloudUpload, Download, FileSignature, FileText, Info, KeyRound, Pill, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { api, ApiError, EVENT_SESSION_EXPIRED, type Encounter, type Patient, type Session } from '../api';
+import { measureEvent } from './perf-metrics';
 
 /**
  * P1/ST-P1-004 (parte web) — JORNADA DE PRESCRIÇÃO na UI de equipe, integrada aos
@@ -377,7 +378,8 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
     try{
       const body:{operationId:string;overrideJustification?:string}={operationId:crypto.randomUUID()};
       if(just)body.overrideJustification=just;
-      const r=await api<SignResult>('/prescriptions/'+rx.id+'/sign',token,'POST',body);
+      // Métrica 'create_prescription' (ST-P1-012): emitir/atestar a prescrição.
+      const r=await measureEvent(token,'create_prescription',()=>api<SignResult>('/prescriptions/'+rx.id+'/sign',token,'POST',body));
       setSignResult(r);
       if(Array.isArray(r.safetyAlerts)){setAlerts(r.safetyAlerts);setAlertsRxId(rx.id);}
       setOverride('');

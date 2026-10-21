@@ -14,6 +14,8 @@ import { ResultsPage } from './pages/Results';
 import { PatientPortalPage } from './pages/PatientPortal';
 
 type View='dashboard'|'patients'|'record'|'record360'|'prescriptions'|'agenda'|'team'|'assistant'|'teleconsult'|'hospital'|'results'|'templates'|'metrics'|'lgpd'|'security';
+/** Fase 8 — sugestões de IA para revisão humana (provenance em snake_case do banco). */
+type AiSuggestionRow={id:string;kind:string;status:string;payload:Record<string,unknown>;model:string|null;prompt_version:string|null;generated_at:string|null;review_note?:string|null;reviewed_at?:string|null};
 type Banner={text:string;kind:'success'|'error'|'info'};
 type Draft={expectedVersion:number;operationId:string;templateId:string;sections:Record<string,string>};
 const mkId=()=>crypto.randomUUID();
@@ -218,6 +220,11 @@ export default function App(){
   const [pending,setPending]=useState(0);
   const [transcript,setTranscript]=useState('');
   const [aiResult,setAiResult]=useState<unknown>(null);
+  // Fase 8 — revisão humana de sugestões: provenance + editar/aceitar/rejeitar.
+  const [aiProvenance,setAiProvenance]=useState<{model:string;promptVersion:string;generatedAt:string}|null>(null);
+  const [aiSuggestions,setAiSuggestions]=useState<AiSuggestionRow[]>([]);
+  const [aiEditText,setAiEditText]=useState<Record<string,string>>({});
+  const [aiRejectReason,setAiRejectReason]=useState('');
   const [loading,setLoading]=useState(false);
   const [serverReady,setServerReady]=useState(false);
   // P0-05 Break-glass: carregamento do prontuário pendente de motivo de emergência.
@@ -330,6 +337,9 @@ export default function App(){
   useEffect(()=>{
     if(user){void pendingCount(user.orgId,user.id).then(setPending).catch(()=>{});}
   },[user]);
+  useEffect(()=>{
+    if(view==='assistant')void refreshAiSuggestions();
+  },[view]);
   async function openPatient(p:Patient){
     if(!token)return;
     setPatient(p);setEncounter(null);setNote(null);setAddenda([]);setSections({});setView('record');
@@ -518,11 +528,50 @@ export default function App(){
   }
   async function askAI(e:FormEvent){
     e.preventDefault();if(!token)return;
-    setLoading(true);setAiResult(null);
+    setLoading(true);setAiResult(null);setAiProvenance(null);
     try{
-      const response=await api<{suggestion:unknown;status:string}>('/ai/extract',token,'POST',{transcript});
-      setAiResult(response.suggestion);alert('Sugestão recebida. Revise todos os campos antes de registrar.','info');
+      const response=await api<{suggestion:unknown;provenance?:{model:string;promptVersion:string;generatedAt:string}}>('/ai/extract',token,'POST',{transcript});
+      setAiResult(response.suggestion);
+      if(response.provenance)setAiProvenance(response.provenance);
+      alert('Sugestão recebida. Revise todos os campos antes de registrar. A extração não altera o prontuário.','info');
+      await refreshAiSuggestions();
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
+  }
+  /** Lista de pendentes para revisão (Fase 8): falha de listagem não derruba a tela. */
+  async function refreshAiSuggestions(){
+    if(!token)return;
+    try{setAiSuggestions(await api<AiSuggestionRow[]>('/ai/suggestions?status=pending',token));}
+    catch{setAiSuggestions([]);}
+  }
+  /** Edição humana ANTES do aceite: JSON do payload → payload; erro é auditado no servidor. */
+  async function saveAiEdit(id:string){
+    if(!token)return;
+    let payload:Record<string,unknown>;
+    try{payload=JSON.parse(aiEditText[id]??'');}catch{alert('JSON inválido para o payload da sugestão.','error');return;}
+    if(!payload||typeof payload!=='object'||Array.isArray(payload)){alert('O payload precisa ser um objeto JSON.','error');return;}
+    try{
+      await api(`/ai/suggestions/${id}/edit`,token,'POST',{payload});
+      alert('Edição salva e auditada. A sugestão segue pendente de aceite.','success');
+      await refreshAiSuggestions();
+    }catch(err){alert((err as Error).message,'error');}
+  }
+  async function acceptAiSuggestion(id:string){
+    if(!token)return;
+    try{
+      await api(`/ai/suggestions/${id}/accept`,token,'POST',{});
+      alert('Sugestão aceita. A decisão foi auditada — nada foi assinado ou registrado automaticamente na prontuária.','success');
+      await refreshAiSuggestions();
+    }catch(err){alert((err as Error).message,'error');}
+  }
+  async function rejectAiSuggestion(id:string){
+    if(!token)return;
+    const reason=aiRejectReason.trim();
+    if(reason.length<3){alert('A rejeição exige um motivo (mínimo3 caracteres).','error');return;}
+    try{
+      await api(`/ai/suggestions/${id}/reject`,token,'POST',{reason});
+      alert('Sugestão rejeitada com motivo auditado.','success');
+      setAiRejectReason('');await refreshAiSuggestions();
+    }catch(err){alert((err as Error).message,'error');}
   }
   // Área do paciente: rota/view SEM sessão staff — sessão própria em PatientPortalPage.
   // Rota PÚBLICA da teleconsulta do paciente: `#teleconsult=<roomId>` (link
@@ -707,7 +756,35 @@ export default function App(){
             <label>Texto a analisar<textarea rows={13} minLength={10} required value={transcript} onChange={e=>setTranscript(e.target.value)} placeholder="Transcrição fornecida pelo profissional. Não inserir informações identificáveis em ambiente sem autorização de tratamento de dados."/></label>
             <button className="primary-button" disabled={loading} type="submit"><Sparkles size={17}/> Extrair informações</button></form>
             <p className="footnote muted">Desabilitado por padrão. Ativar exige configuração contratual do provedor, avaliação de privacidade e permissão na organização.</p>
-          </div><div className="panel"><div className="panel-title"><h2>Sugestão para revisão</h2></div>{aiResult?<pre className="ai-json">{JSON.stringify(aiResult,null,2)}</pre>:<div className="empty-state"><Sparkles size={32}/><p>Nenhuma sugestão ainda.</p></div>}<p className="muted footnote">Nenhuma sugestão é registrada ou assinada automaticamente.</p></div></div>
+          </div><div className="panel"><div className="panel-title"><h2>Sugestão para revisão</h2></div>
+            {aiResult?<div className="stack gap-3">
+              {aiProvenance&&<p className="muted footnote">Modelo: {aiProvenance.model||'desconhecido'} · Prompt {aiProvenance.promptVersion} · Gerado em {new Date(aiProvenance.generatedAt).toLocaleString('pt-BR')}</p>}
+              <pre className="ai-json">{JSON.stringify(aiResult,null,2)}</pre>
+            </div>:<div className="empty-state"><Sparkles size={32}/><p>Nenhuma sugestão ainda.</p></div>}
+            <p className="muted footnote">Nenhuma sugestão é registrada ou assinada automaticamente. A decisão humana (aceitar/editar/rejeitar) é auditada.</p>
+          </div></div>
+          <div className="panel"><div className="panel-title"><h2>Sugestões pendentes de decisão humana</h2><ShieldCheck size={19}/></div>
+            {aiSuggestions.length===0?<div className="empty-state"><ClipboardList size={30}/><p>Nenhuma sugestão pendente.</p></div>:
+            <div className="stack gap-4">{aiSuggestions.map(s=><div className="list-line" key={s.id} style={{alignItems:'flex-start'}}>
+              <div className="list-icon"><Sparkles size={18}/></div>
+              <div style={{flex:1}}>
+                <strong>{s.kind}</strong>
+                <small>{s.model?`Modelo ${s.model}`:'Modelo desconhecido'} · Prompt {s.prompt_version||'sem versão'} · {s.generated_at?new Date(s.generated_at).toLocaleString('pt-BR'):'data de geração ausente'}</small>
+                <label>Editar payload (JSON — alteração auditada)
+                  <textarea rows={4} value={aiEditText[s.id]??JSON.stringify(s.payload,null,2)} onChange={e=>setAiEditText(p=>({...p,[s.id]:e.target.value}))}/>
+                </label>
+                <label>Motivo de rejeição (obrigatório ao rejeitar)
+                  <input value={aiRejectReason} onChange={e=>setAiRejectReason(e.target.value)} placeholder="Ex.: código CID incompatível com o texto"/>
+                </label>
+              </div>
+              <div className="portal-consent-actions" style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <button className="secondary-button" onClick={()=>void saveAiEdit(s.id)}>Salvar edição</button>
+                <button className="primary-button" onClick={()=>void acceptAiSuggestion(s.id)}>Aceitar</button>
+                <button className="text-button" onClick={()=>void rejectAiSuggestion(s.id)}>Rejeitar</button>
+              </div>
+            </div>)}</div>}
+            <p className="muted footnote">Aceitar/editar/rejeitar é registrado em auditoria. A IA nunca assina, prescreve ou registra no prontuário sozinha (CFM 2.454/2026).</p>
+          </div>
         </section>}
         {view==='record360'&&<section>
           <div className="page-heading"><div><span className="eyebrow">PRONTUÁRIO 360°</span><h1>Prontuário 360°</h1><p>Linha do tempo, alto risco e documentos em uma única visão consolidada.</p></div></div>

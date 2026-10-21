@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Get, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
@@ -64,6 +64,59 @@ export function orderTransition(current: OrderStatus, next: OrderStatus): void {
 export function occupancyRate(total: number, occupied: number): number {
   if (total === 0) return 0;
   return Math.round((occupied / total) * 1000) / 1000;
+}
+
+// ------------------------------------------------------------------ Flag 344
+/**
+ * Programa 344 (antimicrobianos/ANVISA) sob FEATURE FLAG: é um serviço de
+ * MERCADO, e ainda não há decisão de mercado/regulatória da direção sobre
+ * incluí-lo no market-fit. A flag evita expor o programa — inclusive listando
+ * dados do banco como se estivesse ativo — antes dessa decisão: enquanto off
+ * (ausente = off por padrão), POST/suspend respondem 409 honesto com auditoria
+ * `hospital.344.blocked`, e o GET devolve {disabled:true} sem tocar a tabela.
+ */
+export const ANTIMICROBIAL_344_OFF_REASON =
+  'Programa 344 desligado (FEATURE_ANTIMICROBIAL_344 ausente — decisão de mercado pendente)';
+
+/** Pura: só liga com valores explícitos ('1'/'true'/'on'/'yes'). */
+export function antimicrobial344Enabled(env: Record<string, string | undefined> = process.env): boolean {
+  return ['1', 'true', 'on', 'yes'].includes(String(env.FEATURE_ANTIMICROBIAL_344 || '').toLowerCase().trim());
+}
+
+// ------------------------------------------------ Checagem de medicação (027)
+// medication_administrations (migração 027) é LIVRO DE REGISTRO do que a
+// enfermagem administrou — nenhum trigger escreve aqui. `barcode` é OPCIONAL:
+// enquanto o mercado não exige checagem por scanner, o campo já é gravado e o
+// audit registra apenas a PRESENÇA dele (sem nome do medicamento nem nota —
+// isso é dado clínico do paciente e não vai para audit_events).
+export const administrationSchema = z.object({
+  medicationName: z.string().trim().min(1).max(200),
+  dose: z.string().trim().min(1).max(80).optional(),
+  route: z.string().trim().min(1).max(80).optional(),
+  barcode: z.string().trim().min(1).max(120).optional(),
+  note: z.string().trim().min(1).max(500).optional(),
+  prescriptionId: uuid.optional(),
+  administeredAt: z.string().datetime({ offset: true })
+    .refine(v => new Date(v).getTime() <= Date.now() + 5 * 60 * 1000,
+      'administeredAt não pode ir além de 5 minutos no futuro')
+    .optional()
+}).strict();
+
+/**
+ * Chave PURA de checagem de duplicidade: mesma admissão + medicamento
+ * normalizado (trim/minúsculas) + horário truncado no minuto. O handler compara
+ * esta chave, linha a linha, contra as administrações já registradas no minuto
+ * e responde 409 "Administração idêntica já registrada neste horário" — evita
+ * duplo lançamento da mesma dose (clique duplo/reenvio), sem barra legítima.
+ */
+export function administrationDuplicateKey(input: {
+  admissionId: string; medicationName: string; administeredAt: string | Date;
+}): string {
+  const at = input.administeredAt instanceof Date ? input.administeredAt : new Date(input.administeredAt);
+  const minute = Number.isNaN(at.getTime()) ? 'invalid-date' : at.toISOString().slice(0, 16);
+  // Espaços internos colapsam: 'Dipirona   500mg' ≡ 'dipirona 500mg' na checagem.
+  const medication = input.medicationName.trim().toLowerCase().replace(/\s+/g, ' ');
+  return `${input.admissionId}|${medication}|${minute}`;
 }
 
 @Controller('hospital')
@@ -188,10 +241,82 @@ export class HospitalController {
     });
   }
 
+  /**
+   * Registro de administração de medicação pela enfermagem (checagem). Escrita
+   * explicita do profissional — livro de registro, não automação de prescrição.
+   * Integração honesta com prescrição: só aceita prescriptionId do MESMO org e
+   * do paciente da admissão (match patient_id × hospital_admissions.patient_id).
+   */
+  @Post('admissions/:admissionId/administrations')
+  async createAdministration(@Req() req: ReqWithActor, @Param('admissionId') rawId: string, @Body() raw: unknown) {
+    const actor = req.actor;
+    requireRole(actor, ['admin', 'doctor', 'nurse']);
+    const admissionId = parse(uuid, rawId);
+    const body = parse(administrationSchema, raw);
+    const admission = await this.db.query('SELECT patient_id FROM hospital_admissions WHERE id=$1 AND org_id=$2', [admissionId, actor.org_id]);
+    if (!admission.rowCount) throw new NotFoundException('Admissão não encontrada');
+    if (body.prescriptionId) {
+      const rx = await this.db.query(
+        `SELECT 1 FROM prescriptions p
+           JOIN hospital_admissions a ON a.patient_id = p.patient_id AND a.org_id = p.org_id
+          WHERE p.id=$1 AND p.org_id=$2 AND a.id=$3`, [body.prescriptionId, actor.org_id, admissionId]);
+      if (!rx.rowCount) throw new BadRequestException('Prescrição não pertence a este interno');
+    }
+    const administeredAt = body.administeredAt ? new Date(body.administeredAt) : new Date();
+    // Checagem de duplicidade honesta (minuto): compara chave pura com o que já
+    // existe no banco para esta admissão —409 evita duplo lançamento da dose.
+    const dup = await this.db.query(
+      `SELECT medication_name, administered_at FROM medication_administrations
+        WHERE org_id=$1 AND admission_id=$2
+          AND administered_at >= date_trunc('minute', $3::timestamptz)
+          AND administered_at <  date_trunc('minute', $3::timestamptz) + interval '1 minute'
+        LIMIT 50`, [actor.org_id, admissionId, administeredAt]);
+    const key = administrationDuplicateKey({ admissionId, medicationName: body.medicationName, administeredAt });
+    const duplicated = dup.rows.some((r: { medication_name: string; administered_at: Date }) =>
+      administrationDuplicateKey({ admissionId, medicationName: r.medication_name, administeredAt: r.administered_at }) === key);
+    if (duplicated) throw new ConflictException('Administração idêntica já registrada neste horário');
+    const row = await this.db.query<any>(
+      `INSERT INTO medication_administrations(org_id,admission_id,prescription_id,medication_name,dose,route,barcode,note,administered_by,administered_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING id,prescription_id,medication_name,dose,route,barcode,administered_at`,
+      [actor.org_id, admissionId, body.prescriptionId ?? null, body.medicationName, body.dose ?? null,
+       body.route ?? null, body.barcode ?? null, body.note ?? null, actor.id, administeredAt]);
+    // Audit só com METADADOS: alvo = admissão e presença de barcode. Nunca
+    // medication_name/note (dado clínico do paciente) em audit_events.
+    await audit(this.db, actor, 'hospital.medication.administered', 'hospital_admission', admissionId,
+      { hasBarcode: !!body.barcode, linkedPrescription: !!body.prescriptionId });
+    return row.rows[0];
+  }
+
+  /** Histórico de administrações do interno (prontuário autorizado — retorna note). */
+  @Get('admissions/:admissionId/administrations')
+  async listAdministrations(@Req() req: ReqWithActor, @Param('admissionId') rawId: string) {
+    const actor = req.actor;
+    requireRole(actor, ['admin', 'doctor', 'nurse']);
+    const admissionId = parse(uuid, rawId);
+    const admission = await this.db.query('SELECT 1 FROM hospital_admissions WHERE id=$1 AND org_id=$2', [admissionId, actor.org_id]);
+    if (!admission.rowCount) throw new NotFoundException('Admissão não encontrada');
+    const rows = await this.db.query(
+      `SELECT ma.id,ma.prescription_id,ma.medication_name,ma.dose,ma.route,ma.barcode,ma.note,
+              ma.administered_at,ma.administered_by,u.display_name AS administered_by_name
+         FROM medication_administrations ma
+         LEFT JOIN users u ON u.id = ma.administered_by AND u.org_id = ma.org_id
+        WHERE ma.org_id=$1 AND ma.admission_id=$2
+        ORDER BY ma.administered_at DESC, ma.created_at DESC
+        LIMIT 100`, [actor.org_id, admissionId]);
+    await audit(this.db, actor, 'hospital.medication.listed', 'hospital_admission', admissionId, { count: rows.rows.length });
+    return rows.rows;
+  }
+
   @Post('antimicrobials')
   async antimicrobial(@Req() req: ReqWithActor, @Body() raw: unknown) {
     const actor = req.actor;
     requireRole(actor, ['admin', 'doctor']);
+    // Feature flag 344: off = 409 honesto + auditoria; nada é gravado.
+    if (!antimicrobial344Enabled()) {
+      await audit(this.db, actor, 'hospital.344.blocked', 'antimicrobial_344', null, { endpoint: 'POST /hospital/antimicrobials' });
+      throw new ConflictException(ANTIMICROBIAL_344_OFF_REASON);
+    }
     const body = parse(antimicrobialSchema, raw);
     const patient = await this.db.query('SELECT 1 FROM patients WHERE id=$1 AND org_id=$2', [body.patientId, actor.org_id]);
     if (!patient.rowCount) throw new NotFoundException('Paciente não encontrado');
@@ -206,6 +331,8 @@ export class HospitalController {
   async listAntimicrobials(@Req() req: ReqWithActor, @Query('admissionId') admissionId?: string) {
     const actor = req.actor;
     requireRole(actor, ['admin', 'doctor', 'nurse']);
+    // Feature flag 344 off: NUNCA lista do banco como se o programa estivesse ativo.
+    if (!antimicrobial344Enabled()) return { disabled: true, reason: ANTIMICROBIAL_344_OFF_REASON, items: [] };
     const filters = ['org_id=$1'];
     const params: unknown[] = [actor.org_id];
     if (admissionId) { params.push(parse(uuid, admissionId)); filters.push(`admission_id=$${params.length}`); }
@@ -220,6 +347,11 @@ export class HospitalController {
     const actor = req.actor;
     requireRole(actor, ['admin', 'doctor']);
     const id = parse(uuid, rawId);
+    // Feature flag 344: off = 409 honesto + auditoria; nada é alterado.
+    if (!antimicrobial344Enabled()) {
+      await audit(this.db, actor, 'hospital.344.blocked', 'antimicrobial_344', id, { endpoint: 'POST /hospital/antimicrobials/:id/suspend' });
+      throw new ConflictException(ANTIMICROBIAL_344_OFF_REASON);
+    }
     const body = parse(suspendSchema, raw);
     const updated = await this.db.query(
       'UPDATE antimicrobial_344 SET status=\'suspended\', suspend_reason=$3 WHERE id=$1 AND org_id=$2 AND status=\'active\' RETURNING id',

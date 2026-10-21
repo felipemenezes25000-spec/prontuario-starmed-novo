@@ -89,6 +89,8 @@ export function TeleconsultPage({ session, alert }: { session: Session; alert: A
 // ---------------------------------------------------------------- Hospitalar
 type Bed = { id: string; label: string; status: string; ward_code: string };
 type Order = { id: string; order_type: string; description: string; status: string; priority: string; ordered_at: string };
+type Administration = { id: string; medication_name: string; dose: string | null; route: string | null; barcode: string | null; administered_at: string; administered_by_name: string | null };
+type Antimicrobials344 = { disabled?: boolean; reason?: string; items?: { id: string; medication_name: string; status: string }[] };
 
 export function HospitalPage({ session, alert }: { session: Session; alert: Alert }) {
   const token = session.accessToken;
@@ -98,6 +100,12 @@ export function HospitalPage({ session, alert }: { session: Session; alert: Aler
   const [orders, setOrders] = useState<Order[]>([]);
   const [ward, setWard] = useState({ code: '', name: '' });
   const [orderForm, setOrderForm] = useState({ patientId: '', orderType: 'lab', description: '', priority: 'routine' });
+  // Checagem de medicação (enfermagem) — registro por interno (admissão).
+  const [admId, setAdmId] = useState('');
+  const [admins, setAdmins] = useState<Administration[]>([]);
+  const [adminForm, setAdminForm] = useState({ medicationName: '', dose: '', route: '', barcode: '', note: '' });
+  // Programa 344 sob feature flag: disabled:true vira notice honesta na UI.
+  const [anti344, setAnti344] = useState<Antimicrobials344 | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -109,6 +117,12 @@ export function HospitalPage({ session, alert }: { session: Session; alert: Aler
       ]);
       setBeds(b); setMetrics(m); setOrders(o);
     } catch (err) { alert((err as Error).message, 'error'); }
+    // Programa 344: se a API responder {disabled:true}, a UI não renderiza o
+    // painel/formulário de antimicrobianos — só a notice de decisão pendente.
+    if (canWrite)
+      api<Antimicrobials344 | Array<{ id: string; medication_name: string; status: string }>>('/hospital/antimicrobials', token)
+        .then(r => setAnti344(Array.isArray(r) ? { disabled: false, items: r } : r))
+        .catch(() => setAnti344(null));
   };
   useEffect(() => { void load(); }, []);
 
@@ -134,6 +148,26 @@ export function HospitalPage({ session, alert }: { session: Session; alert: Aler
       setOrderForm({ patientId: '', orderType: 'lab', description: '', priority: 'routine' });
       await load();
     } catch (err) { alert((err as Error).message, 'error'); }
+    finally { setBusy(false); }
+  }
+  const loadAdmins = async (id: string) => {
+    if (!id.trim()) { setAdmins([]); return; }
+    try { setAdmins(await api<Administration[]>(`/hospital/admissions/${id.trim()}/administrations`, token)); }
+    catch (err) { alert((err as Error).message, 'error'); }
+  };
+  async function administer(e: FormEvent) {
+    e.preventDefault(); setBusy(true);
+    try {
+      const payload: Record<string, unknown> = { medicationName: adminForm.medicationName };
+      if (adminForm.dose.trim()) payload.dose = adminForm.dose.trim();
+      if (adminForm.route.trim()) payload.route = adminForm.route.trim();
+      if (adminForm.barcode.trim()) payload.barcode = adminForm.barcode.trim();
+      if (adminForm.note.trim()) payload.note = adminForm.note.trim();
+      await api(`/hospital/admissions/${admId.trim()}/administrations`, token, 'POST', payload);
+      alert('Administração registrada na checagem de medicação.', 'success');
+      setAdminForm({ medicationName: '', dose: '', route: '', barcode: '', note: '' });
+      await loadAdmins(admId);
+    } catch (err) { alert((err as Error).message, 'error'); } //409 duplicidade: msg amigável do servidor
     finally { setBusy(false); }
   }
   const bedColor = (s: string) => s === 'occupied' ? 'clinical-high' : 'small-pill';
@@ -167,6 +201,26 @@ export function HospitalPage({ session, alert }: { session: Session; alert: Aler
           <label>Prioridade<select value={orderForm.priority} onChange={e => setOrderForm({ ...orderForm, priority: e.target.value })}><option value="routine">Rotina</option><option value="urgent">Urgente</option></select></label>
           <button className="primary-button" disabled={busy} type="submit"><Plus size={15}/> Registrar pedido</button>
         </form>
+      </div>}
+      {canWrite && <div className="panel"><div className="panel-title"><h2>Checagem de medicação</h2><CheckCircle2 size={19}/></div>
+        <label>Admissão do interno (UUID)<input value={admId} onChange={e => setAdmId(e.target.value)} onBlur={e => void loadAdmins(e.target.value)} placeholder="UUID da admissão hospitalar"/></label>
+        <form className="stack gap-3" onSubmit={administer}>
+          <label>Medicamento<input required maxLength={200} value={adminForm.medicationName} onChange={e => setAdminForm({ ...adminForm, medicationName: e.target.value })} placeholder="Ex.: Dipirona 500 mg"/></label>
+          <label>Dose<input maxLength={80} value={adminForm.dose} onChange={e => setAdminForm({ ...adminForm, dose: e.target.value })} placeholder="Ex.: 1 mL"/></label>
+          <label>Via<input maxLength={80} value={adminForm.route} onChange={e => setAdminForm({ ...adminForm, route: e.target.value })} placeholder="Ex.: endovenosa"/></label>
+          <label>Código de barras (opcional — checagem por scanner entra quando exigido pelo mercado)<input maxLength={120} value={adminForm.barcode} onChange={e => setAdminForm({ ...adminForm, barcode: e.target.value })} placeholder="Ex.: 7891234567890"/></label>
+          <label>Observação<textarea maxLength={500} rows={2} value={adminForm.note} onChange={e => setAdminForm({ ...adminForm, note: e.target.value })} placeholder="Opcional — registro de enfermagem"/></label>
+          <button className="primary-button" disabled={busy || !admId.trim()} type="submit"><CheckCircle2 size={15}/> Registrar administração</button>
+        </form>
+        {!admId.trim() ? <p className="muted">Informe a admissão do interno para ver o histórico.</p> :
+          admins.length === 0 ? <p className="muted empty-state">Nenhuma administração registrada para este interno.</p> :
+            admins.slice(0, 20).map(a => <div className="list-line" key={a.id}><div className="list-icon"><HeartPulse size={18}/></div>
+              <div><strong>{a.medication_name}{a.dose ? ` • ${a.dose}` : ''}{a.route ? ` • ${a.route}` : ''}</strong>
+                <small>registrado por {a.administered_by_name ?? '—'} em {new Date(a.administered_at).toLocaleString('pt-BR')}</small></div>
+              <span className="small-pill">{a.barcode ? 'barcode ✓' : 'sem barcode'}</span></div>)}
+      </div>}
+      {canWrite && anti344?.disabled && <div className="panel"><div className="panel-title"><h2>Programa 344 (antimicrobianos)</h2><ShieldCheck size={19}/></div>
+        <p className="muted">Programa 344 desligado nesta implantação (FEATURE_ANTIMICROBIAL_344). A direção decide a inclusão no mercado-alvo.</p>
       </div>}
       <div className="panel"><div className="panel-title"><h2>Pedidos recentes</h2><ClipboardList size={19}/></div>
         {orders.length === 0 ? <p className="muted empty-state">Nenhum pedido registrado.</p> :

@@ -78,6 +78,10 @@ migrações, bootstrap, API :3001, web :5174). Detalhes das jornadas: ver os spe
 | `interop/interop-extra.test.ts` (F6) | 11 puros:7 canais de saída nascendo desligados, regra MLLP TLS+CA obrigatória, sandboxes LIS/PACS/DICOMweb, re-export de backoff/DLQ/breaker, QIDO URL, **bytes exatos do frame MLLP**, parseAck | adapters interop | **local npm test 172/172 ✓** |
 | **`a11y.spec.ts` (F7 — jornada9)** | axe WCAG2.2AA em9 contextos (logins, dashboard, pacientes, prontuário,360×2, prescrição, resultados, teleconsulta, portal) — **serious/critical bloqueiam**; pré-correção63+contrast+2target-size; pós-correção **ZERO** (inclui bug de layout da sidebar e `target-size`) | acessibilidade AA | **local jornada93/3 ✓ (10 iterações)** · CI no push do marco |
 | `perf-metrics.test.ts` (F7) |3 puros: normalização de rota sem PHI (UUID/numérico/query), percentis p50/p95, agregação+amostra limitada | métricas sem PHI | **local npm test175/175 ✓** |
+| `hospital-ai.spec.ts` (F8 — jornada10) | IA: injection PT/EN →400+audit SEM texto (2 caminhos), provedor-desligado503, lista de revisão; hospitalar: administração de enfermagem (201+barcode, duplicidade409, lista com profissional, audit sem PHI) e344 OFF (409+GET honesto) | governança IA+hospitalar | **local24/24 ✓** · CI no push do marco |
+| `ai-injection.test.ts` (F8) |6 puros:12 padrões PT/EN+role-switch, sem falso positivo em transcrição clínica, normalização de acentos, prompt version estável | defesa anti-injection | **local npm test193/193 ✓** |
+| `ai-eval.test.ts` (F8) |6 puros: scorer F1 (conjuntos/substring), queixa por tokens, exame binário, média macro + **dataset sintético8 casos validado no teste (marca 'DADO FICTÍCIO', CID-10 BR, self-score1.0)** | avaliação de IA | **local ✓ + `evaluate.mjs --self-check` =1.0** |
+| `hospital-nursing.test.ts` (F8) |6 puros: flag344 (ausente/lixo=OFF;1/true/on/yes=ON), schema strict+limits+ISO≤+5min, chave de duplicidade (normalização, minuto, Date≡ISO, inválidas≠válida) | enfermagem/flag | **local ✓** |
 
 ## 6. Segurança de dependências/segredos (CI)
 

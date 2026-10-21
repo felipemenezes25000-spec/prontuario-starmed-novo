@@ -1,0 +1,42 @@
+[
+  {
+    "id": "fict-01-hipertensao",
+    "transcript": "DADO FICTÍCIO. Paciente fictício de56 anos relata dor de cabeça há três dias e tontura ao levantar. Refere uso de losartana todo dia pela manhã. Nega febre. Exame físico fictício: pressão elevada, sem sinais de déficit.",
+    "golden": { "cid10": ["I10"], "medications": ["losartana"], "complaintTokens": ["dor", "cabeca", "tontura"], "examinationPresent": true }
+  },
+  {
+    "id": "fict-02-diabetes",
+    "transcript": "DADO FICTÍCIO. Fantasma fictício com48 anos, diabético, relata sede excessiva e urina frequente. Toma metformina850 mg duas vezes ao dia. Exame fictício sem alterações agudas.",
+    "golden": { "cid10": ["E11.9"], "medications": ["metformina"], "complaintTokens": ["sede", "urina"], "examinationPresent": true }
+  },
+  {
+    "id": "fict-03-respiratorio",
+    "transcript": "DADO FICTÍCIO. Pessoa fictícia de30 anos com tosse seca e dor no peito ao inspirar há dois dias, sem febre. Sem medicação contínua. Exame fictício com estertores discretos.",
+    "golden": { "cid10": ["J06.9"], "medications": [], "complaintTokens": ["tosse", "dor", "peito"], "examinationPresent": true }
+  },
+  {
+    "id": "fict-04-gastro",
+    "transcript": "DADO FICTÍCIO. Ser fictício de62 anos com dor abdominal tipo cólica e náusea após refeição. Em uso de omeprazol. Exame físico fictício com dor à palpação.",
+    "golden": { "cid10": ["R10.4"], "medications": ["omeprazol"], "complaintTokens": ["dor", "abdominal", "náusea"], "examinationPresent": true }
+  },
+  {
+    "id": "fict-05-ansiedade",
+    "transcript": "DADO FICTÍCIO. Indivíduo fictício de35 anos relata ansiedade e insônia há um mês. Usa sertralina. Não fez exame físico hoje.",
+    "golden": { "cid10": ["F41.9"], "medications": ["sertralina"], "complaintTokens": ["ansiedade", "insonia"], "examinationPresent": false }
+  },
+  {
+    "id": "fict-06-pediatria",
+    "transcript": "DADO FICTÍCIO. Criança fictícia de7 anos com febre e dor de garganta há um dia. Nenhum medicamento contínuo. Exame fictício com hiperemia de faringe.",
+    "golden": { "cid10": ["J03.9"], "medications": [], "complaintTokens": ["febre", "garganta"], "examinationPresent": true }
+  },
+  {
+    "id": "fict-07-geriatria",
+    "transcript": "DADO FICTÍCIO. Idoso fictício de78 anos com queda domiciliar e dor no quadril direito. Usa varfarina e sinvastatina. Exame fictício com limitação de movimento.",
+    "golden": { "cid10": ["S72.0"], "medications": ["varfarina", "sinvastatina"], "complaintTokens": ["queda", "dor", "quadril"], "examinationPresent": true }
+  },
+  {
+    "id": "fict-08-alergia",
+    "transcript": "DADO FICTÍCIO. Pessoa fictícia de41 anos com urticária após iniciar amoxicilina, associada a prurido. Sem outras medicações. Exame fictício com placas eritematosas.",
+    "golden": { "cid10": ["L50.9"], "medications": ["amoxicilina"], "complaintTokens": ["urticaria", "prurido"], "examinationPresent": true }
+  }
+]

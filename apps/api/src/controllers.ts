@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Put, Patch, Body, Query, Param, Req, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Body, Query, Param, Req, BadRequestException, ConflictException, ForbiddenException, NotFoundException, UnauthorizedException, ServiceUnavailableException } from '@nestjs/common';
 import { z } from 'zod';
 import { Db } from './db';
 import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } from './fhir-mappers';
 import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireCareContext, requireRole, requestContext, sessionResponse, verifyPassword } from './security';
 import { aiSchema, aiSuggestionSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, signSchema, uuid } from './domain';
+import { AI_PROMPT_VERSION, detectPromptInjection } from './ai-clinical';
 
 type R = {actor:Actor};
 type RWithHeaders = R & { headers?: Record<string, unknown> };
@@ -345,6 +346,17 @@ export class AiController {
   async extract(@Req() req:R,@Body() raw:unknown){
     const actor=a(req);requireRole(actor,['doctor']);
     const b=parse(aiSchema,raw);
+    // Fase 8 — defesa contra PROMPT INJECTION: a transcrição é CONTEÚDO DO
+    // USUÁRIDO; tentativas de sequestrar o system prompt não chegam ao provedor.
+    // O texto NUNCA vai para audit_events (só padrões + comprimento).
+    const injection = detectPromptInjection(b.transcript);
+    if (injection.suspected) {
+      await audit(this.db, actor, 'ai.injection.suspected', 'organization', actor.org_id,
+        { patterns: injection.patterns, length: b.transcript.length });
+      throw new BadRequestException(
+        'Transcrição recusada: contém instruções direcionadas ao modelo (defesa contra prompt injection). ' +
+        'Remova trechos de comando de sistema e reenvie.');
+    }
     const org=await this.db.query<any>('SELECT ai_enabled FROM organizations WHERE id=$1',[actor.org_id]);
     const url=process.env.LLM_API_URL,key=process.env.LLM_API_KEY,model=process.env.LLM_MODEL;
     if(!org.rows[0]?.ai_enabled || !url || !key || !model) throw new ServiceUnavailableException('IA desativada. Exige revisão de privacidade e configuração');
@@ -369,7 +381,12 @@ export class AiController {
       if(!validated.success)throw new ServiceUnavailableException('O provedor retornou campos clínicos inválidos; nada foi registrado');
       const suggestion={...validated.data,requires_physician_review:true};
       await audit(this.db,actor,'ai.extraction.request','organization',actor.org_id);
-      return {suggestion,status:'requires_physician_review'};
+      // PROVENANCE (Fase 8 — ST-P1-013): quem gerou, com qual prompt/versão e
+      // quando — a revisão humana precisa enxergar a origem da sugestão.
+      return {
+        suggestion, status:'requires_physician_review',
+        provenance:{ model: process.env.LLM_MODEL || 'unknown', promptVersion: AI_PROMPT_VERSION, generatedAt: new Date().toISOString() }
+      };
     }finally{clearTimeout(timer);}
   }
 }

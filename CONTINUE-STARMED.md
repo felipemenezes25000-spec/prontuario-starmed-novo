@@ -364,10 +364,34 @@ run `39521070197` ✗ (1 asserção de heading, causa documentada) → fix `3952
 - **Validação local:** `npm test` **175/175** · build ✓ · **E2E21/21 (axe zerado)** ·
   smoke+mfa ✓ · LOGIN_HITS=10 (limite exato — orçamento em tests/e2e).
 
-**Próximo:** push F7 → CI →3 verdes → **Fase 8 (IA governada: copiloto com
-provenance+revisão humana+auditoria, dataset sintético, defesa contra prompt
-injection; hospitalar: enfermagem/checagem/344 atrás de flag)** — depois fechar
-pendências externas nomeadas (ITI/ACT, RNDS, IdP, pentest, nomeações, SaMD).
+**Próximo:** push F7 → CI →3 verdes → **Fase 8 (IA governada + hospitalar)
+ENTREGUE (ver §M)** — depois fechar pendências externas nomeadas (ITI/ACT, RNDS,
+IdP, pentest, nomeações, SaMD).
+
+### M. FASE 8 — IA GOVERNADA + HOSPITALAR (21/10/2026, mesma sessão) — ENTREGUE
+
+- **`database/027`**: provenance (`prompt_version`,`generated_at`) + tabela
+  `medication_administrations` (RLS tier1) — upgrade local ✓.
+- **IA governada** (subagente hospitalar entregou; subagente IA MORREU →
+  orquestrador implementou): provenance nomeada (`AI_PROMPT_VERSION`),
+  `POST /ai/suggestions/:id/edit` auditado por nomes de campo, **defesa
+  anti-injection** (12 padrões PT/EN+role-switch →400 antes do provedor, audit
+  SEM texto) em AMBOS os caminhos (`/ai/extract` e dictation/discharge/codes),
+  UI de revisão humana (editar/aceitar/rejeitar-com-motivo + provenance),
+  **dataset sintético8 casos + scorer puro + `evaluate.mjs --self-check=1.0`**.
+- **Hospitalar**: checagem de medicação da enfermagem (barcode OPCIONAL,
+  duplicidade409 por minuto, prescrição com patient-match, audit só metadados)
+  + **344 atrás de `FEATURE_ANTIMICROBIAL_344`** (OFF por padrão — decisão de
+  mercado NOMEADA; UI mostra notice honesta).
+- **E2E jornada10** (`hospital-ai.spec.ts`,0 logins novos).
+- **Validação local F8:** `npm test` **193/193** · build ✓ · E2E **24/24** ·
+  self-check avaliador1.0 · migrações ✓ · LOGIN10/10.
+
+**Próximo:** push F8 → CI →3 verdes (aceite do GRÁFICO F1–F8 COMPLETO) →
+então só restam PENDÊNCIAS EXTERNAS nomeadas (bloqueios honestos, nunca gates
+desligados): ITI/ACT+cert real, RNDS+registro ANS, IdP OIDC, LIS/PACS reais,
+pentest, nomeações (DPO/liderança clínica/farmacêutico), SaMD/ANVISA,
+avaliação de IA com modelo real (credencial) e leitor de tela (humano).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

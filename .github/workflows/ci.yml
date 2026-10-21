@@ -222,6 +222,26 @@ jobs:
           # (1, esperado) se não for zerado aqui.
           exit 0
 
+  interop-fhir:
+    name: Interop — validador FHIR oficial (fixtures)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      # JAR oficial HL7 (7.0.2) baixado uma vez e verificado por sha256 PUBLISHED
+      # (o script falha fechada se o hash divergir); pacote FHIR core fica em ~/.fhir.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/fhir-validator
+            ~/.fhir
+          key: fhir-validator-7.0.2-e3e50f06
+      - name: Validar fixtures com o validador oficial (positivo + gate negativo)
+        run: node scripts/rnds/validate-official.mjs
+
   security:
     name: Gitleaks — varredura de segredos
     runs-on: ubuntu-latest

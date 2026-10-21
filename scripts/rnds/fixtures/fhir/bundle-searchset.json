@@ -1,0 +1,57 @@
+{
+  "resourceType": "Bundle",
+  "id": "fict-bundle-0001",
+  "meta": { "lastUpdated": "2026-01-01T00:00:00.000Z" },
+  "type": "searchset",
+  "total": 1,
+  "link": [
+    {
+      "relation": "self",
+      "url": "https://starmed.example/fhir/R4/Condition?patient=fict-patient-0001&_include=Condition.subject:Patient"
+    }
+  ],
+  "entry": [
+    {
+      "fullUrl": "https://starmed.example/fhir/R4/Condition/fict-condition-0001",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fict-condition-0001",
+        "clinicalStatus": {
+          "coding": [
+            { "system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active" }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            { "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status", "code": "confirmed" }
+          ]
+        },
+        "category": [
+          {
+            "coding": [
+              { "system": "http://terminology.hl7.org/CodeSystem/condition-category", "code": "problem-list-item" }
+            ]
+          }
+        ],
+        "code": { "text": "Hipertensao essencial (DADO FICTICIO)" },
+        "subject": { "reference": "Patient/fict-patient-0001" },
+        "recordedDate": "2025-01-02T10:05:00.000Z",
+        "recorder": { "reference": "Practitioner/fict-practitioner-0001" }
+      },
+      "search": { "mode": "match" }
+    },
+    {
+      "fullUrl": "https://starmed.example/fhir/R4/Patient/fict-patient-0001",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "fict-patient-0001",
+        "identifier": [{ "system": "urn:starmed:external-id", "value": "EXT-42" }],
+        "active": true,
+        "name": [{ "use": "official", "text": "MARIA SILVA (DADO FICTICIO)" }],
+        "gender": "female",
+        "birthDate": "1985-03-12"
+      },
+      "search": { "mode": "include" }
+    }
+  ]
+}

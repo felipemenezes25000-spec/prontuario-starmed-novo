@@ -1,0 +1,74 @@
+{
+  "resourceType": "CapabilityStatement",
+  "id": "starmed-r4",
+  "status": "active",
+  "date": "2026-01-01T00:00:00.000Z",
+  "kind": "instance",
+  "fhirVersion": "4.0.1",
+  "format": ["json"],
+  "implementation": {
+    "description": "StarMed EHR — prontuário eletrônico (instância de demonstração/homologação; não apto a uso clínico real)"
+  },
+  "rest": [
+    {
+      "mode": "server",
+      "resource": [
+        {
+          "type": "Patient",
+          "interaction": [{ "code": "read" }, { "code": "search-type" }],
+          "searchParam": [
+            { "name": "name", "type": "string" },
+            { "name": "birthdate", "type": "date" }
+          ]
+        },
+        {
+          "type": "Condition",
+          "interaction": [{ "code": "read" }, { "code": "search-type" }],
+          "searchParam": [
+            { "name": "patient", "type": "reference" },
+            { "name": "code", "type": "token" }
+          ]
+        },
+        {
+          "type": "AllergyIntolerance",
+          "interaction": [{ "code": "read" }, { "code": "search-type" }],
+          "searchParam": [{ "name": "patient", "type": "reference" }]
+        },
+        {
+          "type": "Observation",
+          "interaction": [{ "code": "read" }, { "code": "search-type" }],
+          "searchParam": [
+            { "name": "patient", "type": "reference" },
+            { "name": "category", "type": "token" },
+            { "name": "date", "type": "date" }
+          ]
+        },
+        {
+          "type": "MedicationRequest",
+          "interaction": [{ "code": "read" }, { "code": "search-type" }],
+          "searchParam": [
+            { "name": "patient", "type": "reference" },
+            { "name": "status", "type": "token" }
+          ]
+        },
+        {
+          "type": "DiagnosticReport",
+          "interaction": [{ "code": "read" }, { "code": "search-type" }],
+          "searchParam": [
+            { "name": "patient", "type": "reference" },
+            { "name": "date", "type": "date" }
+          ]
+        },
+        {
+          "type": "DocumentReference",
+          "interaction": [{ "code": "read" }, { "code": "search-type" }],
+          "searchParam": [
+            { "name": "patient", "type": "reference" },
+            { "name": "type", "type": "token" },
+            { "name": "date", "type": "date" }
+          ]
+        }
+      ]
+    }
+  ]
+}

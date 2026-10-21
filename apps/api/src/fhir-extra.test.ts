@@ -118,10 +118,10 @@ test('smart-configuration expõe endpoints, capability e scopes', () => {
 
   assert.equal(cfg.authorization_endpoint, 'http://localhost:3001/auth/sso/start');
   assert.equal(cfg.token_endpoint, 'http://localhost:3001/auth/login');
-  assert.deepEqual(cfg.capability, ['permission-v2', 'launch-standalone']);
-  for (const scope of ['openid', 'profile', 'patient/*.read', 'user/*.read']) {
-    assert.ok(cfg.scopes_supported.includes(scope), `scope ${scope} ausente`);
-  }
+  // HONESTIDADE (Fase 6): sem authorization server NÃO há capability SMART nem
+  // scopes concedidos — discovery informa endpoints, não promete permissões.
+  assert.deepEqual(cfg.capability, []);
+  assert.deepEqual(cfg.scopes_supported, []);
 
   const custom = buildSmartConfiguration({
     SMART_AUTH_URL: 'https://id.example/auth',

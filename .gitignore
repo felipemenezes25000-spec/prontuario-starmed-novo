@@ -16,3 +16,5 @@ tiss-ci.xml
 tiss-ci-invalid.xml
 # cache incremental do tsc (regenerado a cada build)
 *.tsbuildinfo
+# validador FHIR oficial baixado verificado (204MB — nunca versionado)
+.cache/

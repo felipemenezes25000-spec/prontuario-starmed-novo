@@ -132,6 +132,22 @@ export function unwrapMllp(frame: Buffer): Buffer {
   return frame.subarray(1, frame.length - 2);
 }
 
+/** ACK recebido por MLLP: código MSA-1, controle MSA-2 e texto de erro MSA-3. */
+export type Hl7Ack = { code: 'AA' | 'AE' | 'AR' | string; controlId: string | null; error: string | null };
+
+/**
+ * Parses the MSA segment of a received ACK (Fase 6 — envio MLLP de saída).
+ * Throws on a message without MSA or without MSA-1: an unreadable ACK is
+ * NEVER treated as success by the caller.
+ */
+export function parseAck(ack: string): Hl7Ack {
+  const msa = parseHL7V2(ack).segmentos.get('MSA')?.[0];
+  if (!msa) throw new Error('HL7: ACK sem segmento MSA');
+  const code = getFieldValue(msa, 1);
+  if (!code) throw new Error('HL7: MSA-1 (código de ACK) ausente');
+  return { code, controlId: getFieldValue(msa, 2) || null, error: getFieldValue(msa, 3) || null };
+}
+
 export type AdtFields = {
   patientExternalId: string;
   patientName: string;

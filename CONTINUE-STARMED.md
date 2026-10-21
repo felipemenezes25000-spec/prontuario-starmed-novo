@@ -320,10 +320,33 @@ run `39521070197` ✗ (1 asserção de heading, causa documentada) → fix `3952
   login budget9/10 · integração (package.json/022..024 aplicadas; main.ts sem novos
   controllers).
 
-**Próximo:** push F5 → CI →3 verdes → **Fase 6 (Interop ST-P1-009/010: validador
-FHIR oficial sobre fixtures + CapabilityStatement honesto + SMART scopes reais +
-MLLP sobre TLS + DICOMweb sandbox + adapters retry/DLQ nascer desligados)** →
+**Próximo:** push F5 → CI →3 verdes → **Fase 6 (Interop) ENTREGUE (ver §K)** →
 Fase 7 (UX/WCAG+Métricas) → Fase 8 (IA/Hospitalar).
+
+### K. FASE 6 — INTEROPERABILIDADE (21/10/2026, mesma sessão) — ENTREGUE
+
+- **Migrações `025`+`026`** (orquestrador): canais hl7/tiss/nfse/rnds/dicom no
+  outbox E no circuit breaker (lacuna da025 pega na revisão) + `order_id` nullable
+  (mensagens sem pedido diagnóstico) — upgrade local ✓.
+- **Validador FHIR OFICIAL no CI** (`interop-fhir`): jar HL7 `validator_cli.jar`
+  **7.0.2 pinado + sha256 conferido** (baixado e verificado LOCALMENTE ✓),
+  `scripts/rnds/validate-official.mjs` + 7 fixtures + gate negativo.
+  **EXECUTADO LOCAL: 7/7 PASS + inválida recusada (exit0)** com JDK17.
+- **Achado real do gate**: o CapabilityStatement do `/fhir/R4/metadata` estava
+  **inválido** (cpb-2/cpb-14 — `kind:instance` exige `implementation`) → gerador
+  corrigido; fixtures de Encounter (timezone) e Bundle (fullUrl+include) corrigidos.
+- **SMART honesto**: `scopes_supported:[]`+`capability:[]` sem AS.
+- **Adapters**: `outbound.ts` (7 canais nascer desligados, retry2^n+DLQ5ª+breaker),
+  `mllp.ts` (TLS real com CA obrigatória, sem rede sem env), `dicomweb.ts`
+  (sandbox honesto com matches vazio) +4 rotas no controller existente.
+- **`.env.example`** completado com TODAS as envs de integração.
+- **Validação local F6:** `npm test` **172/172** · build ✓ · **E2E18/18** ·
+  validador **7/7+negativo** ✓ · migrações ✓.
+
+**Próximo:** push F6 → CI7jobs (primeira execução do `interop-fhir`) →3 verdes →
+**Fase 7 (UX/WCAG + MÉTRICAS ST-P1-012: auditoria axe+teclado+leitor de tela das
+jornadas críticas, estados loading/empty/error/denied/offline/conflict, métricas
+p50/p98 sem PHI)** → Fase 8 (IA governada + hospitalar).
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

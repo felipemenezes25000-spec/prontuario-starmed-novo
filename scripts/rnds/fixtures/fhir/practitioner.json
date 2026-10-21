@@ -1,0 +1,5 @@
+{
+  "resourceType": "Practitioner",
+  "id": "fict-practitioner-0001",
+  "name": [{ "use": "official", "text": "DR JOAO SOUZA (DADO FICTICIO)" }]
+}

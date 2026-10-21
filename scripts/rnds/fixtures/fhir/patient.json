@@ -1,0 +1,9 @@
+{
+  "resourceType": "Patient",
+  "id": "fict-patient-0001",
+  "identifier": [{ "system": "urn:starmed:external-id", "value": "EXT-42" }],
+  "active": true,
+  "name": [{ "use": "official", "text": "MARIA SILVA (DADO FICTICIO)" }],
+  "gender": "female",
+  "birthDate": "1985-03-12"
+}

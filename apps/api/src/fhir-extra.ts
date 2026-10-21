@@ -144,7 +144,11 @@ export const CAPABILITY_RESOURCES: { type: string; searchParam: SearchParamDef[]
   { type: 'DocumentReference', searchParam: [{ name: 'patient', type: 'reference' }, { name: 'type', type: 'token' }, { name: 'date', type: 'date' }] },
 ];
 
-/** CapabilityStatement R4 mínimo válido (kind: instance, fhirVersion 4.0.1). */
+/** CapabilityStatement R4 mínimo válido (kind: instance, fhirVersion 4.0.1).
+ *  HONESTO (Fase 6): declara somente interações de LEITURA (read + search-type)
+ *  e NÃO anuncia security/SMART de autorização — não há authorization server
+ *  neste servidor; a discovery SMART fica em /.well-known/smart-configuration
+ *  com scopes_supported vazio. */
 export function buildCapabilityStatement(now: Date = new Date()) {
   return {
     resourceType: 'CapabilityStatement' as const,
@@ -153,6 +157,9 @@ export function buildCapabilityStatement(now: Date = new Date()) {
     kind: 'instance' as const,
     fhirVersion: '4.0.1',
     format: ['json'],
+    // invariantes cpb-2/cpb-14 do validador oficial (Fase 6): kind=instance
+    // EXIGE `implementation`, e o recurso exige description|software|implementation.
+    implementation: { description: 'StarMed EHR — prontuário eletrônico (instância de demonstração/homologação; não apto a uso clínico real)' },
     rest: [{
       mode: 'server' as const,
       resource: CAPABILITY_RESOURCES.map((r) => ({
@@ -164,13 +171,20 @@ export function buildCapabilityStatement(now: Date = new Date()) {
   };
 }
 
-/** SMART backend services discovery (/.well-known/smart-configuration). */
+/**
+ * SMART discovery (/.well-known/smart-configuration) — mantida como endpoint
+ * de DESCoberta, mas HONESTA (decisão nomeada Fase 6): este servidor NÃO tem
+ * authorization server. Sem AS nenhum scope é concedido hoje, então
+ * `scopes_supported` e `capability` saem VAZIOS — anunciar 'patient/*.read'
+ * ou 'launch-standalone' seria prometer concessão que não existe. Os valores
+ * entram aqui QUANDO houver um AS real apontado por SMART_AUTH_URL/SMART_TOKEN_URL.
+ */
 export function buildSmartConfiguration(source: Record<string, string | undefined> = process.env) {
   return {
     authorization_endpoint: source.SMART_AUTH_URL || 'http://localhost:3001/auth/sso/start',
     token_endpoint: source.SMART_TOKEN_URL || 'http://localhost:3001/auth/login',
-    capability: ['permission-v2', 'launch-standalone'],
-    scopes_supported: ['openid', 'profile', 'patient/*.read', 'user/*.read'],
+    capability: [] as string[],
+    scopes_supported: [] as string[],
   };
 }
 

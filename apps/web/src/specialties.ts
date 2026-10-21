@@ -1,4 +1,4 @@
-export type Specialty = 'general'|'cardiology'|'orthopedics'|'pediatrics'|'neurology'|'psychiatry';
+export type Specialty = 'general'|'cardiology'|'orthopedics'|'pediatrics'|'neurology'|'psychiatry'|'gynecology';
 export type Field = {key:string; label:string; placeholder?:string; required?:boolean};
 const base:Field[]=[
   {key:'chiefComplaint',label:'Queixa principal',placeholder:'Relato do paciente'},
@@ -14,5 +14,9 @@ export const specialties:Record<Specialty,{name:string;fields:Field[]}>={
   orthopedics:{name:'Ortopedia',fields:[...base.slice(0,4),{key:'affectedRegion',label:'Região / lateralidade'},{key:'rangeOfMotion',label:'Amplitude de movimento'},{key:'imaging',label:'Exames de imagem'},...base.slice(4)]},
   pediatrics:{name:'Pediatria',fields:[...base.slice(0,4),{key:'caregiver',label:'Responsável / fonte da história'},{key:'development',label:'Desenvolvimento e vacinação'},...base.slice(4)]},
   neurology:{name:'Neurologia',fields:[...base.slice(0,4),{key:'neurologicExam',label:'Exame neurológico'},{key:'redFlags',label:'Sinais de alerta investigados'},...base.slice(4)]},
-  psychiatry:{name:'Psiquiatria',fields:[...base.slice(0,4),{key:'mentalStatus',label:'Exame do estado mental'},{key:'riskAssessment',label:'Avaliação de risco documentada'},...base.slice(4)]}
+  psychiatry:{name:'Psiquiatria',fields:[...base.slice(0,4),{key:'mentalStatus',label:'Exame do estado mental'},{key:'riskAssessment',label:'Avaliação de risco documentada'},...base.slice(4)]},
+  // Ginecologia: campos de dados (DMA/história) — NÃO há regra de teratogenicidade
+  // aqui: alerta clínico exige base farmacológica licenciada (pendência externa,
+  // ADR-0003). O formulário documenta; não decide.
+  gynecology:{name:'Ginecologia',fields:[...base.slice(0,4),{key:'gynHistory',label:'História ginecológica'},{key:'lastMenstrualPeriod',label:'Última menstruação (DMA)'},...base.slice(4)]}
 };

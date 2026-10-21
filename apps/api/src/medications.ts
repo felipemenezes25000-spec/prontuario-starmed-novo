@@ -70,7 +70,45 @@ export function toMedicationItem(r: {
   };
 }
 
-export type MedicationAlert = SafetyAlert & { medicationId: string | null; medicationName: string | null };
+/** Alertas do painel: os códigos do motor de prescrição + `dose_per_kg`
+ *  (informativo de pediatria, sem faixa licenciada). */
+export type MedicationAlert = Omit<SafetyAlert, 'code'> & {
+  code: SafetyAlert['code'] | 'dose_per_kg';
+  medicationId: string | null; medicationName: string | null;
+};
+
+/** Peso do paciente a partir de `patients.social_determinants` (JSONB livre).
+ *  Aceita número ou string numérica; qualquer outro formato => null (sem peso,
+ *  sem alerta de dose — nunca inventar dado clínico). Pura e testável. */
+export function readWeightKg(social: unknown): number | null {
+  if (social && typeof social === 'object' && !Array.isArray(social)) {
+    const raw = (social as Record<string, unknown>).weightKg;
+    const n = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+    if (Number.isFinite(n) && n > 0 && n < 1000) return n;
+  }
+  return null;
+}
+
+/** Dose por peso (Pediatria) — INFORMATIVO e aritmético puro (ST-P1-002/cenário
+ *  pediatria): dose em mg ÷ peso em kg = mg/kg. SEM faixa de referência: regra
+ *  de dose máxima/mínima exige base farmacológica LICENCIADA (pendência externa
+ *  nomeada — ADR-0003). Só `mg` vira conversão; outras unidades não ganham
+ *  alerta adivinhado. Pura e testável. */
+export function weightBasedDoseAlert(input: {
+  medicationId: string; medicationName: string;
+  doseValue: number | null; doseUnit: string | null;
+  weightKg: number | null;
+}): MedicationAlert | null {
+  const { doseValue, doseUnit, weightKg } = input;
+  if (!weightKg || !(weightKg > 0) || !doseValue || !(doseValue > 0)) return null;
+  if (!doseUnit || !/^mg$/i.test(doseUnit.trim())) return null;
+  const perKg = doseValue / weightKg;
+  return {
+    level: 'info', code: 'dose_per_kg',
+    message: `Dose por peso: ${perKg.toFixed(2)} mg/kg (${doseValue} mg / ${weightKg} kg) — INFORMATIVO: sem faixa de referência nesta versão (base farmacológica licenciada é pendência externa); confirme a posologia antes de prescrever.`,
+    medicationId: input.medicationId, medicationName: input.medicationName
+  };
+}
 
 /** Gera os alerts do painel reutilizando o motor puro de prescriptions.ts.
  *  Pura, testável sem banco. Regras:
@@ -115,7 +153,7 @@ export class MedicationsController {
     await ensurePatient(this.db, id, actor.org_id);
     await requireCareContext(this.db, actor, id, breakGlassOf(req));
 
-    const [allergyRows, medRows] = await Promise.all([
+    const [allergyRows, medRows, patientRow] = await Promise.all([
       this.db.query(
         `SELECT substance, criticality, clinical_status, verification_status
            FROM patient_allergies
@@ -124,11 +162,13 @@ export class MedicationsController {
       // Ativas = assinadas (draft não é terapia vigente; cancelled sai daqui e
       // permanece no histórico). Sem DELETE em lugar nenhum.
       this.db.query(
-        `SELECT p.id, p.medication_name, p.dose, p.frequency, p.route, p.status, p.signature_status, p.created_at
+        `SELECT p.id, p.medication_name, p.dose, p.dose_value, p.dose_unit, p.frequency, p.route, p.status, p.signature_status, p.created_at
            FROM prescriptions p
            JOIN encounters e ON e.id = p.encounter_id AND e.org_id = p.org_id
           WHERE p.org_id = $1 AND e.patient_id = $2 AND p.status = 'signed'
-          ORDER BY p.created_at DESC LIMIT 200`, [actor.org_id, id])
+          ORDER BY p.created_at DESC LIMIT 200`, [actor.org_id, id]),
+      // Peso (pediatria): social_determinants.weightKg — ausente => sem alerta.
+      this.db.query('SELECT social_determinants FROM patients WHERE id=$1 AND org_id=$2', [id, actor.org_id])
     ]);
 
     const allergies = allergyRows.rows.map(toAllergyItem);
@@ -136,6 +176,17 @@ export class MedicationsController {
     // O motor de segurança lê LINHAS brutas (clinical_status snake_case): passar
     // os itens camelCase faria o filtro de alergia ativa falhar em silêncio.
     const alerts = buildSafetyAlerts(medRows.rows, allergyRows.rows);
+    // Dose por peso (informativo, aritmético): uma linha por medicação com dose
+    // em mg quando o paciente tem peso registrado.
+    const weightKg = readWeightKg(patientRow.rows[0]?.social_determinants);
+    for (const m of medRows.rows) {
+      const info = weightBasedDoseAlert({
+        medicationId: m.id, medicationName: m.medication_name,
+        doseValue: m.dose_value === null || m.dose_value === undefined ? null : Number(m.dose_value),
+        doseUnit: m.dose_unit ?? null, weightKg
+      });
+      if (info) alerts.push(info);
+    }
 
     await audit(this.db, actor, 'patient.medications.read', 'patient', id, {
       allergies: allergies.length,

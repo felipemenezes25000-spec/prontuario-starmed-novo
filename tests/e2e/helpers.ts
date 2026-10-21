@@ -56,15 +56,16 @@ export function login(email: string, password: string, expected = 201): Promise<
 }
 
 /** Admin sintético já bootstrAPado pelo runner (organização descartável).
- *  Sessão cacheada no worker (workers:1): 4 specs ×1 login custaria 4 do
- *  orçamento de 10/15min do rate limit de /auth/login — com cache são 1. */
-let cachedAdminToken: string | null = null;
+ *  Cache em globalThis: o Playwright empacota CADA spec como bundle próprio —
+ *  um `let` de módulo não sobrevive entre arquivos e cada um gastava 1 login
+ *  (orçamento de 10/15min por IP no rate limit de /auth/login). */
+const g = globalThis as unknown as { __starmedAdminToken?: string | null; __starmedDoctor?: { email: string; token: string } | null };
 export async function adminToken(): Promise<string> {
-  if (cachedAdminToken) return cachedAdminToken;
+  if (g.__starmedAdminToken) return g.__starmedAdminToken;
   const session = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
   if (!session.accessToken) throw new Error('login do admin não devolveu accessToken');
-  cachedAdminToken = session.accessToken;
-  return cachedAdminToken;
+  g.__starmedAdminToken = session.accessToken;
+  return g.__starmedAdminToken;
 }
 
 /** Cria um médico sintético (sem MFA) e devolve o e-mail usado. */
@@ -77,6 +78,18 @@ export async function createDoctor(admin: string, displayName: string): Promise<
     expected: 201
   });
   return email;
+}
+
+/** Doctor de setup COMPARTILHADO entre specs (cache em globalThis — mesmos
+ *  motivos do admin): uma única criação+login reusada por todas as jornadas;
+ *  o orçamento de /auth/login é 10/15min por IP. Sessão sem MFA, sintética. */
+export async function sharedSetupDoctor(): Promise<{ email: string; token: string }> {
+  if (g.__starmedDoctor) return g.__starmedDoctor;
+  const email = await createDoctor(await adminToken(), 'Dr E2E Setup');
+  const session = await login(email, DOCTOR_PASSWORD);
+  if (!session.accessToken) throw new Error('login do doctor de setup não devolveu accessToken');
+  g.__starmedDoctor = { email, token: session.accessToken };
+  return g.__starmedDoctor;
 }
 
 /** TOTP válido para o relógio ATUAL (janela de30s do RFC 6238). */

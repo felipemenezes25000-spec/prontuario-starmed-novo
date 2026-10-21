@@ -11,7 +11,7 @@ type ReqWithActor = { actor: Actor };
 const wardSchema = z.object({
   code: z.string().trim().min(2).max(30),
   name: z.string().trim().min(2).max(120),
-  specialty: z.enum(['general', 'cardiology', 'orthopedics', 'pediatrics', 'neurology', 'psychiatry']).default('general')
+  specialty: z.enum(['general', 'cardiology', 'orthopedics', 'pediatrics', 'neurology', 'psychiatry', 'gynecology']).default('general')
 }).strict();
 const bedsSchema = z.object({ labels: z.array(z.string().trim().min(1).max(30)).min(1).max(200) }).strict();
 const admitSchema = z.object({ patientId: uuid, wardId: uuid, bedId: uuid }).strict();

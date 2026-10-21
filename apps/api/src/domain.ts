@@ -26,7 +26,9 @@ export const patientSchema = z.object({
 
 export const encounterSchema = z.object({
   patientId: uuid,
-  specialty: z.enum(['general','cardiology','orthopedics','pediatrics','neurology','psychiatry']),
+  // 'gynecology' entra com o formulário da especialidade (F2-b): o schema do
+  // banco é TEXT sem CHECK — a autoridade do domínio é este enum.
+  specialty: z.enum(['general','cardiology','orthopedics','pediatrics','neurology','psychiatry','gynecology']),
   type: z.enum(['consultation','follow_up','emergency','teleconsultation']),
   reasonForVisit: z.string().max(4000)
 }).strict();

@@ -6,7 +6,7 @@
  * preservação do registro perdedor). Dados 100% sintéticos.
  */
 import { test, expect } from '@playwright/test';
-import { DOCTOR_PASSWORD, adminToken, api, createDoctor, login, nonce } from './helpers';
+import { DOCTOR_PASSWORD, adminToken, api, nonce, sharedSetupDoctor } from './helpers';
 
 test.describe('Jornada 4 — Prontuário 360° + MPI', () => {
   const medName = 'Losartana E2E 50 mg';
@@ -21,8 +21,9 @@ test.describe('Jornada 4 — Prontuário 360° + MPI', () => {
 
   test.beforeAll(async () => {
     admin = await adminToken();
-    doctorEmail = await createDoctor(admin, 'Dr E2E Prontuário360');
-    doctorToken = (await login(doctorEmail, DOCTOR_PASSWORD)).accessToken!;
+    const doc = await sharedSetupDoctor(); // doctor compartilhado: economiza1 login/10
+    doctorEmail = doc.email;
+    doctorToken = doc.token;
 
     // Paciente COM alergia (crítico baixo → review_required) e atendimento.
     patientName = `Paciente E2E 360 ${nonce()}`;

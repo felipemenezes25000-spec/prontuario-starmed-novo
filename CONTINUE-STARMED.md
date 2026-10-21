@@ -237,9 +237,21 @@ corrigido com allowlist justificado, **nenhum gate desligado**. Run IDs em
 - **Validação local:** `npm test` **127/127** · build ✓ · **E2E 5/5** (jornada4:
   UI 360 + `none_recorded` + gatilho v1 + merge com movedCounts/perdedor/re-merge409/auditoria)
   · smoke + smoke:mfa ✓.
+- **F2b (cenários por especialidade, MESMA data):** `specialties.spec.ts` com 6
+  jornadas sintéticas (geral/cardiologia duplicidade/pediatria **dose por peso
+  INFORMATIVO** via `social_determinants.weightKg`/psiquiatria **privacidade 403→
+  break-glass + timeline sem seções**/ginecologia especialidade NOVA em todos os
+  enums zod + UI/**zero teratogenicidade**/ortopedia lateralidade sem vazamento).
+  ACHADOS: enum `specialty` sem `gynecology` em `domain/hospital/portal/product`
+  (corrigido — o zod era a autoridade); `SafetyAlert.code` union sem `dose_per_kg`
+  (MedicationAlert agora Omit+união); caches de sessão E2E migrados para
+  `globalThis` (bundle por arquivo do Playwright estourava o rate limit de login).
+  **Validação: `npm test` 129/129 · build ✓ · E2E 11/11 ✓.**
 
-**Próximo:** push do marco F2 → CI verde (6 jobs) → run IDs → cenários por
-especialidade (F2-b, com pendências clínicas nomeadas no ADR-0003) → Fase 3 (Exames).
+**Próximo:** push do marco F2b → CI verde → run IDs → **Fase 3 (Exames e
+Resultados: hospital.ts + orders.ts + migração 023 + Results.tsx + ciclo
+pedido→…→comunicado + críticos com escalação + PDF em clinical_documents + LIS/PACS
+desligado documentado)**.
 
 ### A. RODADA 20/10/2026 — execução do `STARMED_PROMPT_MESTRE_EXECUCAO_V2` (SEM rodar testes, por diretriz do usuário)
 

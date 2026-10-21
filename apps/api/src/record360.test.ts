@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseTimelineTypes, toTimelineItem } from './timeline';
-import { buildSafetyAlerts, deriveAllergyState, toAllergyItem, toMedicationItem } from './medications';
+import { buildSafetyAlerts, deriveAllergyState, readWeightKg, toAllergyItem, toMedicationItem, weightBasedDoseAlert } from './medications';
 import { buildMovedCounts, normalizePatientName, pairDuplicateCandidates } from './mpi';
 
 // Prontuário 360° — só funções PURAS exportadas pelos módulos novos (nenhum
@@ -146,4 +146,34 @@ test('buildMovedCounts records only tables with rows actually moved', () => {
     ]),
     { appointments: 3, patient_allergies: 1 });
   assert.deepEqual(buildMovedCounts([]), {});
+});
+
+// ---- Cenário pediatria: dose por peso (informativo, aritmético puro) ----
+
+test('readWeightKg aceita número/string numérica e rejeita lixo clínico', () => {
+  assert.equal(readWeightKg({ weightKg: 14.5 }), 14.5);
+  assert.equal(readWeightKg({ weightKg: '14.5' }), 14.5);
+  assert.equal(readWeightKg({ peso: 14.5 }), null);        // chave errada
+  assert.equal(readWeightKg({ weightKg: -3 }), null);       // negativo
+  assert.equal(readWeightKg({ weightKg: 'abc' }), null);    // não numérico
+  assert.equal(readWeightKg(null), null);
+  assert.equal(readWeightKg([14.5]), null);
+});
+
+test('weightBasedDoseAlert: mg/kg informativo sem faixa; fora de escopo silencioso', () => {
+  const info = weightBasedDoseAlert({
+    medicationId: 'rx1', medicationName: 'Dipirona Gotas', doseValue: 200, doseUnit: 'mg', weightKg: 14.5
+  });
+  assert.ok(info);
+  assert.equal(info.level, 'info');
+  assert.equal(info.code, 'dose_per_kg');
+  assert.match(info.message, /13\.79 mg\/kg/);
+  // Honestidade: o alerta DECLARA a ausência de faixa licenciada.
+  assert.match(info.message, /sem faixa de referência/);
+  assert.match(info.message, /licenciada/);
+  // Sem peso => nenhum alerta (nunca inventar).
+  assert.equal(weightBasedDoseAlert({ medicationId: 'rx1', medicationName: 'X', doseValue: 200, doseUnit: 'mg', weightKg: null }), null);
+  // Unidade fora do escopo (só mg) => nenhum alerta adivinhado.
+  assert.equal(weightBasedDoseAlert({ medicationId: 'rx1', medicationName: 'X', doseValue: 5, doseUnit: 'mL', weightKg: 14.5 }), null);
+  assert.equal(weightBasedDoseAlert({ medicationId: 'rx1', medicationName: 'X', doseValue: 0, doseUnit: 'mg', weightKg: 14.5 }), null);
 });

@@ -25,7 +25,7 @@ const activateSchema = z.object({
 }).strict();
 const loginSchema = z.object({ email: z.string().trim().toLowerCase().email().max(254), password: z.string().min(1).max(256) }).strict();
 const requestSchema = z.object({
-  preferredSpecialty: z.enum(['general', 'cardiology', 'orthopedics', 'pediatrics', 'neurology', 'psychiatry']),
+  preferredSpecialty: z.enum(['general', 'cardiology', 'orthopedics', 'pediatrics', 'neurology', 'psychiatry', 'gynecology']),
   preferredPeriod: z.enum(['morning', 'afternoon', 'any']),
   notes: z.string().trim().max(1000).optional()
 }).strict();

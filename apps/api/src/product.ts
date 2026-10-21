@@ -16,7 +16,7 @@ const sectionSchema = z.object({
 const templateSchema = z.object({
   code: z.string().trim().regex(/^[a-z0-9-]{3,60}$/, 'code deve ser minúsculas/hífen'),
   name: z.string().trim().min(2).max(120),
-  specialty: z.enum(['general', 'cardiology', 'orthopedics', 'pediatrics', 'neurology', 'psychiatry']).default('general'),
+  specialty: z.enum(['general', 'cardiology', 'orthopedics', 'pediatrics', 'neurology', 'psychiatry', 'gynecology']).default('general'),
   sections: z.record(sectionSchema).refine((s) => Object.keys(s).length <= 30 && Object.keys(s).every((k) => /^[a-z_]{2,60}$/.test(k)), 'chaves de seção inválidas'),
   publish: z.boolean().default(false)
 }).strict();

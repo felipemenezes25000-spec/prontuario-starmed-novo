@@ -39,6 +39,9 @@ async function main(){
   const admin=(await request<Login>('/auth/login',null,'POST',{email:adminEmail,password:adminPassword},201)).accessToken;
   const password='Smoke-password-'+randomUUID();
   const doctorEmail='starmed-smoke-'+nonce+'@example.invalid';
+  const crmNumber=String(100000+Math.floor(Math.random()*899999));
+  // Nasce SEM registro profissional: a 1ª assinatura de receita prova o 422 (029)
+  // e o próprio médico cadastra o CRM — sem login extra (orçamento de 10/15min).
   const doctor=await request<Id>('/users',admin,'POST',{email:doctorEmail,displayName:'Médico Teste '+nonce,role:'doctor',password},201);
   const token=(await request<Login>('/auth/login',null,'POST',{email:doctorEmail,password},201)).accessToken;
   const patient=await request<Id>('/patients',token,'POST',{fullName:'Paciente Fictício '+nonce,birthDate:'1990-02-05',administrativeGender:'unknown'},201);
@@ -111,6 +114,15 @@ async function main(){
   const crossOp = await request<any>('/encounters/'+visit2.id+'/prescriptions',token,'POST',rxPayload,409);
   assert.ok(String((crossOp as any)?.message||'').length>0,'reuso da chave em outra operação é conflito');
 
+  const noCrm=await request<{missing:Array<{field:string}>}>('/prescriptions/'+rx.id+'/sign',token,'POST',{operationId:randomUUID()},422);
+  assert.ok(noCrm.missing.some(m=>m.field==='prescritor.crm'),'sem CRM/UF o médico não assina (029)');
+  await request('/users/'+doctor.id+'/registration',token,'PUT',{councilNumber:'111111',councilState:'SP'},400);
+  await request('/users/'+doctor.id+'/registration',token,'PUT',{councilNumber:'12345',councilState:'XX'},400);
+  await request('/users/'+doctor.id+'/registration',admin,'PUT',{councilNumber:'12345',councilState:'SP'},200);
+  await request('/users/'+randomUUID()+'/registration',token,'PUT',{councilNumber:'54321',councilState:'RJ'},403);
+  await request('/users/'+doctor.id+'/registration',token,'PUT',{councilNumber:'CRM/SP '+crmNumber,councilState:'sp',professionalAddress:'Rua Fictícia, 100 - São Paulo/SP',professionalPhone:'(11) 3333-4444'},200);
+  const reg=await request<{councilNumber:string;councilState:string}>('/users/'+doctor.id+'/registration',admin);
+  assert.deepEqual([reg.councilNumber,reg.councilState],[crmNumber,'SP'],'CRM normalizado (só dígitos, UF maiúscula)');
   const signOperationId = randomUUID();
   const rxSigned = await request<any>('/prescriptions/'+rx.id+'/sign',token,'POST',{operationId:signOperationId},201);
   assert.equal(rxSigned.signature_status,'attested','atestação ≠ assinatura qualificada');
@@ -124,6 +136,16 @@ async function main(){
   assert.equal(pdfRes.status,200,'PDF persistido é servido');
   const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());
   assert.ok(pdfBytes.subarray(0,5).toString('latin1')==='%PDF-','artefato começa com %PDF');
+  assert.ok(pdfBytes.toString('latin1').includes('CRM '+crmNumber+'/SP'),'PDF identifica o prescritor por CRM/UF (029)');
+  assert.equal(rxSigned.kind,'simple');
+  assert.equal(rxSigned.valid_until,null,'receita simples sem validade regulatória fixa');
+
+  // 029: tipos de receita e registro profissional do prescritor.
+  const kinds=await request<{kinds:Array<{kind:string;enabled:boolean;reason:string|null}>}>('/prescription-kinds',token);
+  assert.equal(kinds.kinds.find(k=>k.kind==='controlled_special')?.enabled,false,'controle especial nunca sem SNCR');
+  await request('/encounters/'+visit.id+'/prescriptions',token,'POST',{...rxPayload,operationId:randomUUID(),kind:'controlled_special'},409);
+  if(!kinds.kinds.find(k=>k.kind==='antimicrobial')?.enabled)
+    await request('/encounters/'+visit.id+'/prescriptions',token,'POST',{...rxPayload,operationId:randomUUID(),kind:'antimicrobial'},409);
 
   // 2) J1 #8: certificado FORA do trust store ICP-Brasil (CA de teste) → 400, sem emissão.
   const testPki = await buildTestPki();

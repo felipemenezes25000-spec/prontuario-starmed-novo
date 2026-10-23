@@ -80,7 +80,9 @@ export async function createDoctor(admin: string, displayName: string): Promise<
   await api<{ id: string }>('/users', {
     token: admin,
     method: 'POST',
-    body: { email, displayName: `${displayName} ${nonce()}`, role: 'doctor', password: DOCTOR_PASSWORD },
+    // CRM/UF sintético (029): sem registro profissional o médico não assina receita.
+    body: { email, displayName: `${displayName} ${nonce()}`, role: 'doctor', password: DOCTOR_PASSWORD,
+      registration: { councilNumber: String(100000+Math.floor(Math.random()*899999)), councilState: 'SP', professionalAddress: 'Rua Fictícia, 100 - São Paulo/SP' } },
     expected: 201
   });
   return email;

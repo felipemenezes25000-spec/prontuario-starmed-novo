@@ -13,7 +13,9 @@ export const userSchema = z.object({
   email: z.string().email().max(254),
   displayName: z.string().min(2).max(160),
   role,
-  password: z.string().min(12).max(256)
+  password: z.string().min(12).max(256),
+  // CRM/UF do médico já no cadastro (opcional; validado em practitioners.ts).
+  registration: z.unknown().optional()
 }).strict();
 
 export const patientSchema = z.object({

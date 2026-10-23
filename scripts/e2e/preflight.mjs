@@ -36,7 +36,9 @@ async function post(path, body, token) {
 const admin = await post('/auth/login', { email: adminEmail, password: adminPassword });
 if (!admin.accessToken) throw new Error('preflight: admin sem accessToken');
 const doctorEmail = `starmed-e2e-setup-${Date.now()}@example.invalid`;
-await post('/users', { email: doctorEmail, displayName: 'Dr E2E Setup', role: 'doctor', password: doctorPassword }, admin.accessToken);
+// CRM/UF sintético (029): sem registro profissional o médico não assina receita.
+await post('/users', { email: doctorEmail, displayName: 'Dr E2E Setup', role: 'doctor', password: doctorPassword,
+  registration: { councilNumber: String(100000+Math.floor(Math.random()*899999)), councilState: 'SP', professionalAddress: 'Rua Fictícia, 100 - São Paulo/SP' } }, admin.accessToken);
 const doctor = await post('/auth/login', { email: doctorEmail, password: doctorPassword });
 if (!doctor.accessToken) throw new Error('preflight: doctor sem accessToken');
 process.stdout.write(JSON.stringify({

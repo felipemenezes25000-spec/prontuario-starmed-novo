@@ -6,6 +6,8 @@ import {
 } from '../api';
 import { measureEvent } from './perf-metrics';
 import { MpiReview } from './MpiReview';
+import { PatientContext } from '../components/PatientContext';
+import { timelineTitle } from '../labels';
 
 /**
  * PRONTUÁRIO 360° (P1/ST-P1-XXX parte web) — visão consolidada do paciente sobre
@@ -209,14 +211,14 @@ export function Record360Page({session,alert,patient,onView}:{
       const docSha=it.kind==='document'&&it.meta?.sha256?shortSha(it.meta.sha256):'';
       return <div className="list-line" key={it.kind+':'+it.id}>
         <div className="list-icon">{kindIcon(it.kind)}</div>
-        <div><strong>{it.title}</strong>
+        <div><strong>{timelineTitle(it.kind,it.title)}</strong>
           <small>{KIND_LABEL[it.kind]??it.kind} • {fmt(it.at)}{it.author?` • ${it.author}`:''}</small>
           {it.summary&&<small className="r360-summary">{it.summary}</small>}</div>
         {critical
           ?<span className="r360-badge-critical">EXAME CRÍTICO</span>
-          :<span className="small-pill">{statusLabel(it.status)}</span>}
+          :it.status?<span className="small-pill">{statusLabel(it.status)}</span>:null}
         {sig&&<span className={'small-pill '+(it.meta?.signatureStatus==='pades'?'pill-signed':'')}>{sig}</span>}
-        {docSha&&<span className="small-pill">SHA-256 {docSha}</span>}
+        {docSha&&<span className="small-pill" title="Identificador de integridade do PDF">Íntegro</span>}
       </div>;
     })}
   </div>;
@@ -297,7 +299,7 @@ export function Record360Page({session,alert,patient,onView}:{
     <div className="patient-header">
       <div className="patient-avatar large">{patient.fullName.slice(0,1).toUpperCase()}</div>
       <div><span className="eyebrow">PRONTUÁRIO 360°</span><h2>{patient.fullName}</h2>
-        <p>Nascimento: {String(patient.birthDate).slice(0,10)}</p></div>
+        <PatientContext patient={patient} token={token}/></div>
       <span className="small-pill">ID {patient.id.slice(0,8)}</span>
       <button type="button" className="secondary-button" onClick={()=>onView('record')}>Prontuário</button>
     </div>

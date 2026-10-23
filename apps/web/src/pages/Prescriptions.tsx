@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, AlertTriangle, ArrowRight, Ban, CloudUpload, Download, FileSignature, FileText, Info, KeyRound, Pill, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { api, ApiError, EVENT_SESSION_EXPIRED, type Encounter, type Patient, type Session } from '../api';
 import { measureEvent } from './perf-metrics';
+import { PatientContext } from '../components/PatientContext';
 
 /**
  * P1/ST-P1-004 (parte web) — JORNADA DE PRESCRIÇÃO na UI de equipe, integrada aos
@@ -538,7 +539,7 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
       <div className="patient-header">
         <div className="patient-avatar large">{patient.fullName.slice(0,1).toUpperCase()}</div>
         <div><span className="eyebrow">PACIENTE SELECIONADO</span><h2>{patient.fullName}</h2>
-          <p>Nascimento: {String(patient.birthDate).slice(0,10)}</p></div>
+          <PatientContext patient={patient} token={token}/></div>
         <span className="small-pill">ID {patient.id.slice(0,8)}</span>
         {role!=='admin'&&<button type="button" className="secondary-button" onClick={()=>onView('record')}>Prontuário</button>}
       </div>

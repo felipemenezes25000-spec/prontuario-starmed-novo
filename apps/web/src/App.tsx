@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, FlaskConical, HeartPulse, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Pill, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
 import { docState, formatCns, formatCpf } from './br-identifiers';
+import { PatientContext } from './components/PatientContext';
+import { appointmentStatusLabel, encounterTypeLabel } from './labels';
 import { api, ApiError, EVENT_SESSION_EXPIRED, type LoginResponse, type Session, type User, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
@@ -635,7 +637,7 @@ export default function App(){
         {view==='dashboard'&&<section>
           <div className="hero"><div><span className="eyebrow">PAINEL DE ATENDIMENTO</span><h1>Bom atendimento começa<br/>com informação clara.</h1><p>Bem-vindo ao StarMed. Acompanhe os registros da sua organização.</p><button className="hero-button" onClick={()=>setView('patients')}>Consultar pacientes <ArrowRight size={17}/></button></div><div className="hero-graphic"><div className="pulse-ring"><HeartPulse size={80} strokeWidth={1.2}/></div></div></div>
           <div className="stat-grid"><div className="stat-card"><Users size={20}/><span>Pacientes cadastrados</span><strong>{patients.length}</strong><small>Até 50 resultados na busca atual</small></div><div className="stat-card"><CalendarDays size={20}/><span>Agendamentos exibidos</span><strong>{appointments.length}</strong><small>Últimos 7 dias e futuros</small></div><div className="stat-card"><CloudUpload size={20}/><span>Rascunhos offline</span><strong>{pending}</strong><small>Armazenados neste navegador</small></div></div>
-          <div className="dashboard-grid"><div className="panel"><div className="panel-title"><h2>Próximos agendamentos</h2><button className="text-button" onClick={()=>setView('agenda')}>Ver agenda <ArrowRight size={15}/></button></div>{appointments.length===0?<p className="muted empty-state">Nenhum agendamento encontrado.</p>:appointments.slice(0,4).map(a=><div className="list-line" key={a.id}><div className="list-icon"><CalendarDays size={18}/></div><div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {a.kind}</small></div><span className="small-pill">{a.status}</span></div>)}</div>
+          <div className="dashboard-grid"><div className="panel"><div className="panel-title"><h2>Próximos agendamentos</h2><button className="text-button" onClick={()=>setView('agenda')}>Ver agenda <ArrowRight size={15}/></button></div>{appointments.length===0?<p className="muted empty-state">Nenhum agendamento encontrado.</p>:appointments.slice(0,4).map(a=><div className="list-line" key={a.id}><div className="list-icon"><CalendarDays size={18}/></div><div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {encounterTypeLabel(a.kind)}</small></div><span className="small-pill">{appointmentStatusLabel(a.status)}</span></div>)}</div>
           <div className="panel"><div className="panel-title"><h2>Fluxo clínico</h2></div><div className="flow-line"><div className="step-num">1</div><div><strong>Identifique o paciente</strong><p>Localize ou cadastre um registro.</p></div></div><div className="flow-line"><div className="step-num">2</div><div><strong>Inicie o atendimento</strong><p>Selecione a especialidade e registre a queixa.</p></div></div><div className="flow-line"><div className="step-num">3</div><div><strong>Revise e ateste</strong><p>Valide os achados e assine a evolução online.</p></div></div></div></div>
         </section>}
         {view==='patients'&&<section>
@@ -656,7 +658,7 @@ export default function App(){
         {view==='record'&&<section>
           <div className="page-heading"><div><span className="eyebrow">DOCUMENTAÇÃO CLÍNICA</span><h1>Prontuário eletrônico</h1><p>Evoluções estruturadas por especialidade, com revisão médica.</p></div></div>
           {!patient?<div className="panel empty-state"><ClipboardList size={35}/><h2>Selecione um paciente</h2><p>Comece pela área de pacientes para abrir o prontuário.</p><button className="primary-button" onClick={()=>setView('patients')}>Ir para pacientes <ArrowRight size={16}/></button></div>:
-          <><div className="patient-header"><div className="patient-avatar large">{patient.fullName.slice(0,1).toUpperCase()}</div><div><span className="eyebrow">PACIENTE EM ATENDIMENTO</span><h2>{patient.fullName}</h2><p>Nascimento: {String(patient.birthDate).slice(0,10)}</p></div><span className="small-pill">ID {patient.id.slice(0,8)}</span></div>
+          <><div className="patient-header"><div className="patient-avatar large">{patient.fullName.slice(0,1).toUpperCase()}</div><div><span className="eyebrow">PACIENTE EM ATENDIMENTO</span><h2>{patient.fullName}</h2>{token&&<PatientContext patient={patient} token={token}/>}</div><span className="small-pill">ID {patient.id.slice(0,8)}</span></div>
           <div className="record-grid"><div className="stack gap-5"><div className="panel"><div className="panel-title"><h2>Atendimentos</h2><span className="small-pill">{encounters.length}</span></div>
             {encounters.length===0?<p className="muted">Nenhum atendimento para este paciente.</p>:encounters.map(e=><button className={'encounter-row '+(encounter?.id===e.id?'selected':'')} onClick={()=>void openEncounter(e)} key={e.id}><div className="list-icon"><FilePenLine size={18}/></div><div><strong>{specialties[e.specialty as Specialty]?.name||e.specialty}</strong><small>{fmt(e.started_at)}</small></div><ArrowRight size={16}/></button>)}
             {(isDoctor||user?.role==='admin')&&patient&&<button type="button" className="text-button" onClick={()=>setView('prescriptions')}><Pill size={15}/> Prescrições do paciente</button>}
@@ -732,7 +734,7 @@ export default function App(){
           <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Agendamentos</h2></div>{appointments.length===0?<div className="empty-state">Nenhuma consulta agendada.</div>:appointments.map(a=>{
             const busy=apptBusy===a.id;
             return <div className="list-line" key={a.id}><div className="list-icon"><CalendarDays size={18}/></div>
-              <div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {a.duration_minutes} min • {a.kind}</small>
+              <div><strong>{a.patient_name}</strong><small>{fmt(a.scheduled_at)} • {a.duration_minutes} min • {encounterTypeLabel(a.kind)}</small>
                 {(a.status==='scheduled'||a.status==='checked_in')&&<div className="agenda-actions">
                   {a.status==='scheduled'&&<button className="text-button" disabled={busy} onClick={()=>{if(window.confirm('Confirmar check-in de '+a.patient_name+'?'))void updateAppointmentStatus(a,'checked_in');}}><CheckCircle2 size={14}/> Check-in</button>}
                   {a.status==='checked_in'&&<button className="text-button" disabled={busy} onClick={()=>{if(window.confirm('Concluir o atendimento de '+a.patient_name+'?'))void updateAppointmentStatus(a,'completed');}}><ShieldCheck size={14}/> Concluir</button>}
@@ -754,7 +756,7 @@ export default function App(){
                   </div>
                 </form>}
               </div>
-              <span className="small-pill">{a.status}</span>
+              <span className="small-pill">{appointmentStatusLabel(a.status)}</span>
             </div>;
           })}</div>
             <div className="panel"><div className="panel-title"><h2>Novo agendamento</h2><Plus size={20}/></div><form className="stack gap-4" onSubmit={createAppointment}>

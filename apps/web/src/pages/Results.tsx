@@ -355,8 +355,8 @@ export function ResultsPage({ session, alert }: { session: Session; alert: Alert
 
       {/* 5) Integração LIS/PACS — estado honesto, sempre com a resposta do servidor. */}
       <div className="panel">
-        <div className="panel-title"><h2>Integração LIS/PACS</h2></div>
-        <p className="muted footnote">A integração nasce desligada: sem LIS_URL/PACS_URL no servidor não há nenhum byte na rede e o despacho é recusado com a mensagem oficial abaixo.</p>
+        <div className="panel-title"><h2>Integração com laboratório e imagem</h2></div>
+        <p className="muted footnote">Desligada neste ambiente: nenhum pedido é enviado ao laboratório ou ao PACS até a integração ser configurada e homologada.</p>
         {integration && <p className={integration.kind === 'error' ? 'inline-error' : 'notice'} role={integration.kind === 'error' ? 'alert' : 'status'}>
           {integration.kind === 'error' && <AlertCircle size={16}/>}{integration.text}</p>}
         {!integration && <p className="muted">Nenhum despacho realizado nesta sessão — o estado "conectado" só é exibido com a confirmação do servidor.</p>}

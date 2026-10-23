@@ -176,3 +176,12 @@ input[aria-invalid="true"]{border-color:#b42318}
 
 .cid-results{list-style:none;padding:0;margin:0;display:grid;gap:4px;max-height:220px;overflow-y:auto;border:1px solid #d6dee3;border-radius:8px}
 .cid-results li button{width:100%;text-align:left;padding:6px 8px}
+
+/* Contexto do paciente em toda tela clínica (UX 2026-10-23, S1). */
+.patient-context p{margin:2px 0 6px}
+.patient-allergies{display:flex;flex-wrap:wrap;gap:6px}
+.allergy-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700}
+.allergy-high{background:#fdecea;color:#9b1c13;border:1px solid #b42318}
+.allergy-other{background:#fff7e6;color:#7a4b00;border:1px solid #c98a12;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600}
+.allergy-none{font-size:12px;color:#5b6b75;font-style:italic}
+.mpi-list{margin-top:8px}

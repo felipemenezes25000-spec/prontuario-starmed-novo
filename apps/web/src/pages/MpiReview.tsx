@@ -59,9 +59,9 @@ export function MpiReview({ session, alert, patient, onMerged }: {
     finally { setBusy(false); }
   }
 
-  if (items === null) return <p role="status">Procurando possíveis duplicidades…</p>;
-  return <section aria-labelledby="mpi-title">
-    <h3 id="mpi-title">Possíveis duplicidades</h3>
+  if (items === null) return <div className="panel"><p role="status" className="muted">Procurando possíveis duplicidades…</p></div>;
+  return <section className="panel" aria-labelledby="mpi-title">
+    <div className="panel-title"><h2 id="mpi-title">Possíveis duplicidades</h2></div>
     <p className="field-hint">Sugestões para revisão humana. Nada é unido automaticamente; documentos (CPF/CNS) diferentes nunca aparecem aqui.</p>
     {error && <div className="inline-error" role="alert">{error}</div>}
     {!error && items.length === 0 && <div className="empty-state">Nenhuma possível duplicidade encontrada para este cadastro.</div>}

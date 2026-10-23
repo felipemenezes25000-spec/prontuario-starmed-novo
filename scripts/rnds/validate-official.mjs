@@ -91,6 +91,16 @@ export function montarLinhaDeComando({ jar, fixture, saida, java = 'java' }) {
   return { comando: java, args: ['-jar', jar, '-version', FHIR_VERSION, '-output', saida, fixture] };
 }
 
+/** Pura: a execução falhou por NÃO conseguir falar com o servidor de terminologia
+ *  externo (tx.fhir.org)? Nesse caso o exit code não diz nada sobre a fixture —
+ *  inclusive a NEGATIVA "falharia" pelo motivo errado e o gate passaria em falso. */
+export function falhaDeTerminologia(saida) {
+  return /Unable to connect to terminology server|Error fetching the server's capability statement/i.test(String(saida ?? ''));
+}
+
+const TENTATIVAS_TERMINOLOGIA = 3;
+const ESPERA_ENTRE_TENTATIVAS_MS = 15000;
+
 export function lerOpcoes(argv) {
   const opcoes = {
     jar: null,
@@ -168,17 +178,30 @@ async function main() {
     rmSync(alvo.saida, { force: true });
     const linha = montarLinhaDeComando({ jar, fixture: alvo.fixture, saida: alvo.saida });
     console.log(`\n>> ${linha.comando} ${linha.args.join(' ')}`);
-    const execucao = spawnSync(linha.comando, linha.args, { stdio: 'inherit', maxBuffer: 64 * 1024 * 1024 });
-    if (execucao.error) {
-      if (execucao.error.code === 'ENOENT') {
-        throw new Error('java não encontrado no PATH; instale um JRE 17+ (o CI usa setup-java) e rode de novo');
+    let execucao, saida = '', tentativa = 0;
+    do {
+      if (tentativa > 0) {
+        console.log(`Servidor de terminologia inacessível — tentativa ${tentativa + 1}/${TENTATIVAS_TERMINOLOGIA} em ${ESPERA_ENTRE_TENTATIVAS_MS / 1000}s`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ESPERA_ENTRE_TENTATIVAS_MS);
       }
-      throw execucao.error;
-    }
+      execucao = spawnSync(linha.comando, linha.args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      if (execucao.error) {
+        if (execucao.error.code === 'ENOENT') {
+          throw new Error('java não encontrado no PATH; instale um JRE 17+ (o CI usa setup-java) e rode de novo');
+        }
+        throw execucao.error;
+      }
+      saida = `${execucao.stdout ?? ''}${execucao.stderr ?? ''}`;
+      process.stdout.write(saida);
+      tentativa++;
+    } while (execucao.status !== 0 && falhaDeTerminologia(saida) && tentativa < TENTATIVAS_TERMINOLOGIA);
     const exitCode = execucao.status ?? 1;
+    // Falha por terminologia inacessível é INCONCLUSIVA: nunca conta como
+    // "inválida recusada" (gate negativo) nem como validação (fail closed).
+    const inconclusivo = exitCode !== 0 && falhaDeTerminologia(saida);
     const nome = alvo.fixture.split(/[\\/]/).slice(-2).join('/');
-    const ok = alvo.esperadoFalha ? exitCode !== 0 : exitCode === 0;
-    resultados.push({ nome, esperadoFalha: alvo.esperadoFalha, exitCode, ok });
+    const ok = !inconclusivo && (alvo.esperadoFalha ? exitCode !== 0 : exitCode === 0);
+    resultados.push({ nome, esperadoFalha: alvo.esperadoFalha, exitCode, ok, inconclusivo });
   }
 
   console.log('\n==== Resumo do gate do validador oficial (sem PHI — só nomes e códigos) ====');
@@ -186,7 +209,9 @@ async function main() {
   for (const r of resultados) {
     const tag = r.ok ? 'PASS' : 'FAIL';
     if (!r.ok) falhas++;
-    const detalhe = r.esperadoFalha
+    const detalhe = r.inconclusivo
+      ? `INCONCLUSIVO: servidor de terminologia externo inacessível após ${TENTATIVAS_TERMINOLOGIA} tentativas (exit ${r.exitCode})`
+      : r.esperadoFalha
       ? r.ok
         ? `recusada como esperado (exit ${r.exitCode})`
         : `GATE INOPERANTE: inválida aceita (exit ${r.exitCode})`

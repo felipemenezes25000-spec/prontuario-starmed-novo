@@ -1,0 +1,3 @@
+# Migracoes SQL com fim de linha fixo: o checksum de schema_migrations nao pode
+# depender do sistema operacional de quem faz o checkout (core.autocrlf).
+database/*.sql text eol=lf

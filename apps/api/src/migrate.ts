@@ -16,7 +16,7 @@
  * NEVER point --adopt at a database whose real schema you have not verified.
  * Runs inside CI only with exclusively synthetic credentials.
  */
-import { createHash } from 'node:crypto';
+import { migrationChecksums } from './migration-checksum';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { config } from 'dotenv';
@@ -44,7 +44,7 @@ function findMigrationsDir(): string {
   return found;
 }
 
-type Migration = { version: string; file: string; sql: string; checksum: string };
+type Migration = { version: string; file: string; sql: string; checksum: string; legacyChecksums: string[] };
 
 function loadMigrations(): Migration[] {
   const dir = findMigrationsDir();
@@ -61,7 +61,7 @@ function loadMigrations(): Migration[] {
       version: f === 'schema.sql' ? '001_schema' : f.replace(/\.sql$/, ''),
       file: f,
       sql,
-      checksum: createHash('sha256').update(sql).digest('hex'),
+      ...migrationChecksums(sql),
     };
   });
 }
@@ -88,7 +88,7 @@ async function main() {
     // Drift: a registered migration whose file changed after application.
     for (const m of migrations) {
       const seen = applied.get(m.version);
-      if (seen && seen !== m.checksum)
+      if (seen && seen !== m.checksum && !m.legacyChecksums.includes(seen))
         throw new Error(
           `Migration drift: ${m.file} changed after being applied ` +
           `(recorded ${seen.slice(0, 12)}…, file ${m.checksum.slice(0, 12)}…). ` +

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Activity, AlertCircle, ArrowRight, BedDouble, Building2, CalendarDays, CheckCircle2, ClipboardList, CloudUpload, FilePenLine, FileSignature, FlaskConical, HeartPulse, KeyRound, LayoutDashboard, LockKeyhole, LogOut, Pill, Plus, Search, ShieldCheck, Sparkles, Stethoscope, Users, Video, WifiOff, X } from 'lucide-react';
+import { docState, formatCns, formatCpf } from './br-identifiers';
 import { api, ApiError, EVENT_SESSION_EXPIRED, type LoginResponse, type Session, type User, type Patient, type Encounter, type ClinicalNote, type ClinicalAddendum, type PatientAllergy, type PatientProblem, type Doctor, type Appointment } from './api';
 import { specialties, type Specialty } from './specialties';
 import { pendingCount, queueDraft, syncDrafts } from './offline';
@@ -213,7 +214,7 @@ export default function App(){
   const [specialty,setSpecialty]=useState<Specialty>('general');
   const [encounterType,setEncounterType]=useState('consultation');
   const [reason,setReason]=useState('');
-  const [newPatient,setNewPatient]=useState({fullName:'',birthDate:'',administrativeGender:'unknown'});
+  const [newPatient,setNewPatient]=useState({fullName:'',birthDate:'',administrativeGender:'unknown',cpf:'',cns:''});
   const [newStaff,setNewStaff]=useState({displayName:'',email:'',role:'doctor',password:''});
   const [appForm,setAppForm]=useState({patientId:'',practitionerId:'',scheduledAt:'',durationMinutes:30,kind:'consultation'});
   const [passphrase,setPassphrase]=useState('');
@@ -290,7 +291,7 @@ export default function App(){
     setProblemForm({display:'',codeSystem:'',code:'',verificationStatus:'provisional'});
     setEncounter(null);setNote(null);setAddenda([]);setAddendumReason('');setAddendumContent('');
     setSections({});setSpecialty('general');setEncounterType('consultation');setReason('');
-    setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown'});
+    setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown',cpf:'',cns:''});
     setNewStaff({displayName:'',email:'',role:'doctor',password:''});
     setAppForm({patientId:'',practitionerId:'',scheduledAt:'',durationMinutes:30,kind:'consultation'});
     setPassphrase('');setPending(0);setTranscript('');setAiResult(null);setLoading(false);
@@ -386,7 +387,7 @@ export default function App(){
     try {
       const created=await api<Patient>('/patients',token,'POST',newPatient);
       await loadLists(session);
-      setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown'});
+      setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown',cpf:'',cns:''});
       alert('Paciente cadastrado.','success');
       if(isDoctor)await openPatient(created);
     }catch(err){alert((err as Error).message,'error');}finally{setLoading(false);}
@@ -622,14 +623,16 @@ export default function App(){
         {view==='patients'&&<section>
           <div className="page-heading"><div><span className="eyebrow">GESTÃO CLÍNICA</span><h1>Pacientes</h1><p>Pesquise e organize os cadastros da sua organização.</p></div></div>
           <div className="content-grid"><div className="panel"><div className="panel-title"><h2>Pacientes cadastrados</h2><span className="small-pill">{patients.length} encontrados</span></div>
-            <div className="search-field"><Search size={17}/><input placeholder="Buscar por nome" value={patientQuery} onChange={e=>setPatientQuery(e.target.value)}/><button onClick={async()=>{if(token)setPatients(await api<Patient[]>('/patients?q='+encodeURIComponent(patientQuery),token));}}>Buscar</button></div>
-            <div className="patient-list">{patients.length===0?<div className="empty-state">Nenhum paciente encontrado.</div>:patients.map(p=><button className="patient-row" key={p.id} onClick={()=>user?.role==='doctor'||user?.role==='nurse'?openPatient(p):alert('Prontuário clínico é restrito à equipe assistencial.','info')}><div className="patient-avatar">{p.fullName[0]?.toUpperCase()}</div><div><strong>{p.fullName}</strong><small>Nascimento: {String(p.birthDate).slice(0,10).split('-').reverse().join('/')}</small></div><ArrowRight size={16}/></button>)}</div>
+            <div className="search-field"><Search size={17}/><input placeholder="Buscar por nome, CPF ou CNS" aria-label="Buscar paciente por nome, CPF ou CNS" value={patientQuery} onChange={e=>setPatientQuery(e.target.value)}/><button onClick={async()=>{if(token)setPatients(await api<Patient[]>('/patients?q='+encodeURIComponent(patientQuery),token));}}>Buscar</button></div>
+            <div className="patient-list">{patients.length===0?<div className="empty-state">Nenhum paciente encontrado.</div>:patients.map(p=><button className="patient-row" key={p.id} onClick={()=>user?.role==='doctor'||user?.role==='nurse'?openPatient(p):alert('Prontuário clínico é restrito à equipe assistencial.','info')}><div className="patient-avatar">{p.fullName[0]?.toUpperCase()}</div><div><strong>{p.fullName}</strong><small>Nascimento: {String(p.birthDate).slice(0,10).split('-').reverse().join('/')}{p.cpfMasked?<> · CPF {p.cpfMasked}</>:null}</small></div><ArrowRight size={16}/></button>)}</div>
           </div>
           <div className="panel"><div className="panel-title"><h2>Novo paciente</h2><Plus size={20}/></div><form className="stack gap-4" onSubmit={createPatient}>
             <label>Nome completo<input required minLength={2} value={newPatient.fullName} onChange={e=>setNewPatient({...newPatient,fullName:e.target.value})} placeholder="Nome do paciente"/></label>
             <label>Data de nascimento<input required type="date" value={newPatient.birthDate} onChange={e=>setNewPatient({...newPatient,birthDate:e.target.value})}/></label>
+            <label>CPF (opcional)<input inputMode="numeric" autoComplete="off" value={newPatient.cpf} onChange={e=>setNewPatient({...newPatient,cpf:formatCpf(e.target.value)})} placeholder="000.000.000-00" aria-invalid={docState(newPatient.cpf,'cpf')==='invalid'} aria-describedby="cpf-hint"/><small id="cpf-hint" className={docState(newPatient.cpf,'cpf')==='invalid'?'field-error':'field-hint'}>{docState(newPatient.cpf,'cpf')==='invalid'?'CPF incompleto ou com dígito verificador inválido.':'Confere só o dígito verificador; não prova titularidade.'}</small></label>
+            <label>Cartão Nacional de Saúde — CNS (opcional)<input inputMode="numeric" autoComplete="off" value={newPatient.cns} onChange={e=>setNewPatient({...newPatient,cns:formatCns(e.target.value)})} placeholder="000 0000 0000 0000" aria-invalid={docState(newPatient.cns,'cns')==='invalid'} aria-describedby="cns-hint"/><small id="cns-hint" className={docState(newPatient.cns,'cns')==='invalid'?'field-error':'field-hint'}>{docState(newPatient.cns,'cns')==='invalid'?'CNS incompleto ou inválido.':'15 dígitos, como impresso no cartão.'}</small></label>
             <label>Gênero administrativo<select value={newPatient.administrativeGender} onChange={e=>setNewPatient({...newPatient,administrativeGender:e.target.value})}><option value="unknown">Não informado</option><option value="female">Feminino</option><option value="male">Masculino</option><option value="other">Outro</option></select></label>
-            <button className="primary-button" disabled={loading||user?.role==='nurse'} type="submit"><Plus size={17}/> Criar cadastro</button>
+            <button className="primary-button" disabled={loading||user?.role==='nurse'||docState(newPatient.cpf,'cpf')==='invalid'||docState(newPatient.cns,'cns')==='invalid'} type="submit"><Plus size={17}/> Criar cadastro</button>
           </form></div></div>
         </section>}
         {view==='record'&&<section>

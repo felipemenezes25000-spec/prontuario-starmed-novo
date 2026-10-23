@@ -5,6 +5,8 @@ import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } fr
 import { Actor, Public, audit, hashPassword, issueMfaStepToken, requireCareContext, requireRole, requestContext, sessionResponse, verifyPassword } from './security';
 import { aiSchema, aiSuggestionSchema, appointmentSchema, draftSchema, encounterSchema, loginSchema, parse, patientSchema, userSchema, validateNoteForSignature, signSchema, uuid } from './domain';
 import { AI_PROMPT_VERSION, detectPromptInjection } from './ai-clinical';
+import { toFhirPatient } from './fhir-extra';
+import { identifyDocument, maskCpf } from './br-identifiers';
 
 type R = {actor:Actor};
 type RWithHeaders = R & { headers?: Record<string, unknown> };
@@ -71,15 +73,31 @@ export class PatientsController {
   async search(@Req() req:R,@Query('q') q='') {
     const actor=a(req); requireRole(actor,['admin','doctor','nurse','reception']);
     const pattern=String(q).trim().slice(0,120);
-    const found=await this.db.query('SELECT id,full_name AS "fullName",birth_date AS "birthDate",administrative_gender AS "administrativeGender",external_id AS "externalId" FROM patients WHERE org_id=$1 AND full_name ILIKE $2 ORDER BY full_name LIMIT 50',[actor.org_id,'%'+pattern.replace(/[\\%_]/g,'\\$&')+'%']);
-    await audit(this.db,actor,'patient.search','patient',null,{count:found.rowCount});
-    return found.rows;
+    // CPF/CNS completo e com DV válido → busca EXATA pelo documento (FL-01);
+    // qualquer outra coisa → busca por nome. A lista devolve o CPF MASCARADO
+    // (2 últimos dígitos): suficiente para distinguir homônimos sem expor o número.
+    const doc=identifyDocument(pattern);
+    const cols='id,full_name AS "fullName",birth_date AS "birthDate",administrative_gender AS "administrativeGender",external_id AS "externalId",cpf,cns IS NOT NULL AS "hasCns"';
+    const found=doc
+      ? await this.db.query(`SELECT ${cols} FROM patients WHERE org_id=$1 AND ${doc.kind}=$2 AND merged_into_id IS NULL ORDER BY full_name LIMIT 50`,[actor.org_id,doc.value])
+      : await this.db.query(`SELECT ${cols} FROM patients WHERE org_id=$1 AND full_name ILIKE $2 ORDER BY full_name LIMIT 50`,[actor.org_id,'%'+pattern.replace(/[\\%_]/g,'\\$&')+'%']);
+    await audit(this.db,actor,'patient.search','patient',null,{count:found.rowCount,by:doc?doc.kind:'name'});
+    return found.rows.map(({cpf,...p}:any)=>({...p,cpfMasked:maskCpf(cpf)}));
   }
   @Post()
   async create(@Req() req:R,@Body() raw:unknown){
     const actor=a(req);requireRole(actor,['admin','doctor','reception']);
     const b=parse(patientSchema,raw);
-    const result=await this.db.query<any>('INSERT INTO patients(org_id,full_name,birth_date,administrative_gender,external_id,phone,social_determinants,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,full_name AS "fullName",birth_date AS "birthDate"',[actor.org_id,b.fullName,b.birthDate,b.administrativeGender||null,b.externalId||null,b.phone||null,JSON.stringify(b.socialDeterminants||{}),actor.id]);
+    let result;
+    try{
+      result=await this.db.query<any>('INSERT INTO patients(org_id,full_name,birth_date,administrative_gender,external_id,phone,cpf,cns,social_determinants,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,full_name AS "fullName",birth_date AS "birthDate"',[actor.org_id,b.fullName,b.birthDate,b.administrativeGender||null,b.externalId||null,b.phone||null,b.cpf||null,b.cns||null,JSON.stringify(b.socialDeterminants||{}),actor.id]);
+    }catch(e:any){
+      // Índices únicos da 028: documento já pertence a um cadastro ATIVO. A
+      // resposta não revela qual paciente (busque pelo documento para conferir).
+      if(e?.code==='23505'&&/patients_org_(cpf|cns)_active_uq/.test(String(e.constraint)))
+        throw new ConflictException(`Já existe cadastro ativo com este ${String(e.constraint).includes('cpf')?'CPF':'CNS'} nesta organização`);
+      throw e;
+    }
     await audit(this.db,actor,'patient.created','patient',result.rows[0].id);
     return result.rows[0];
   }
@@ -87,8 +105,8 @@ export class PatientsController {
   async get(@Req() req:RWithHeaders,@Param('id') rawId:string){
     const id=parse(uuid,rawId),actor=a(req);requireRole(actor,['admin','doctor','nurse','reception']);
     const columns = actor.role==='doctor'||actor.role==='nurse'
-      ? 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,insurance_id,social_determinants,created_at,updated_at'
-      : 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,created_at,updated_at';
+      ? 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,cpf,cns,insurance_id,social_determinants,created_at,updated_at'
+      : 'id,org_id,external_id,full_name,birth_date,administrative_gender,phone,cpf,cns,created_at,updated_at';
     const r=await this.db.query('SELECT '+columns+' FROM patients WHERE id=$1 AND org_id=$2',[id,actor.org_id]);
     if(!r.rowCount)throw new NotFoundException();
     // Prontuário COMPLETO (papéis clínicos) exige contexto de cuidado ou
@@ -304,8 +322,7 @@ export class FhirController {
     if(!r.rowCount)throw new NotFoundException();
     await requireCareContext(this.db,actor,id,breakGlassOf(req));
     await audit(this.db,actor,'fhir.patient.read','patient',id);
-    const p=r.rows[0];
-    return {resourceType:'Patient',id:p.id,identifier:p.external_id?[{system:'urn:starmed:external-id',value:p.external_id}]:[],active:true,name:[{use:'official',text:p.full_name}],gender:p.administrative_gender??'unknown',birthDate:p.birth_date instanceof Date?p.birth_date.toISOString().slice(0,10):String(p.birth_date)};
+    return toFhirPatient(r.rows[0]);
   }
   @Get('Encounter/:id')
   async encounter(@Req() req:RWithHeaders,@Param('id') rawId:string) {

@@ -6,7 +6,7 @@
  *   GET /fhir/R4/metadata                          — CapabilityStatement R4 (@Public)
  *   GET /fhir/R4/.well-known/smart-configuration   — config SMART (@Public)
  *   GET /.well-known/smart-configuration           — config SMART na raiz do servidor (@Public)
- *   GET /fhir/R4/Patient?name=&birthdate=
+ *   GET /fhir/R4/Patient?name=&birthdate=&identifier=<system CPF|CNS da RNDS>|<valor>
  *   GET /fhir/R4/Condition?patient=&code=
  *   GET /fhir/R4/AllergyIntolerance?patient=
  *   GET /fhir/R4/Observation?patient=&category=&date=
@@ -23,6 +23,7 @@
  * um Bundle searchset vazio com total: 0, sem inventar fonte de dados.
  */
 import { BadRequestException, Controller, Get, Query, Req } from '@nestjs/common';
+import { FHIR_SYSTEM_CNS, FHIR_SYSTEM_CPF, fhirPatientIdentifiers, isValidCns, isValidCpf } from './br-identifiers';
 import { Db } from './db';
 import { toFhirAllergy, toFhirCondition, type AllergyRow, type ConditionRow } from './fhir-mappers';
 import { Actor, Public, audit, requireRole } from './security';
@@ -135,7 +136,7 @@ export function buildSearchSetBundle(resources: unknown[], total: number, url: s
 
 export type SearchParamDef = { name: string; type: string };
 export const CAPABILITY_RESOURCES: { type: string; searchParam: SearchParamDef[] }[] = [
-  { type: 'Patient', searchParam: [{ name: 'name', type: 'string' }, { name: 'birthdate', type: 'date' }] },
+  { type: 'Patient', searchParam: [{ name: 'name', type: 'string' }, { name: 'birthdate', type: 'date' }, { name: 'identifier', type: 'token' }] },
   { type: 'Condition', searchParam: [{ name: 'patient', type: 'reference' }, { name: 'code', type: 'token' }] },
   { type: 'AllergyIntolerance', searchParam: [{ name: 'patient', type: 'reference' }] },
   { type: 'Observation', searchParam: [{ name: 'patient', type: 'reference' }, { name: 'category', type: 'token' }, { name: 'date', type: 'date' }] },
@@ -199,11 +200,11 @@ function selfUrl(path: string, params: Record<string, string | undefined>): stri
 // Mapeadores FHIR locais (os de fhir-mappers.ts cobrem Condition/Allergy)
 // ---------------------------------------------------------------------------
 
-function toFhirPatient(p: any) {
+export function toFhirPatient(p: any) {
   return {
     resourceType: 'Patient' as const,
     id: p.id,
-    identifier: p.external_id ? [{ system: 'urn:starmed:external-id', value: p.external_id }] : [],
+    identifier: fhirPatientIdentifiers(p),
     active: true,
     name: [{ use: 'official' as const, text: p.full_name }],
     gender: p.administrative_gender ?? 'unknown',
@@ -326,16 +327,31 @@ export class FhirExtraController {
       values.push(birthdate);
       where.push(`birth_date = $${values.length}`);
     }
+    // identifier=<system>|<valor> (token FHIR): só CPF/CNS da RNDS. Sistema
+    // desconhecido ou DV inválido -> 400 (nunca um "0 resultados" enganoso).
+    const identifier = str(q.identifier);
+    if (identifier) {
+      const bar = identifier.indexOf('|');
+      const system = bar >= 0 ? identifier.slice(0, bar) : '';
+      const value = (bar >= 0 ? identifier.slice(bar + 1) : identifier).replace(/\D/g, '');
+      const column = system === FHIR_SYSTEM_CPF ? 'cpf' : system === FHIR_SYSTEM_CNS ? 'cns' : null;
+      if (!column) throw new BadRequestException('identifier exige o system de CPF ou CNS da RNDS');
+      if (!(column === 'cpf' ? isValidCpf(value) : isValidCns(value))) {
+        throw new BadRequestException('identifier com dígito verificador inválido');
+      }
+      values.push(value);
+      where.push(`${column} = $${values.length}`);
+    }
     values.push(limit, skip);
     const r = await this.db.query<any>(
-      `SELECT id, full_name, birth_date, administrative_gender, external_id, count(*) OVER() AS total
+      `SELECT id, full_name, birth_date, administrative_gender, external_id, cpf, cns, count(*) OVER() AS total
          FROM patients WHERE ${where.join(' AND ')} ORDER BY full_name
         LIMIT $${values.length - 1} OFFSET $${values.length}`, values);
     const resources = r.rows.map(toFhirPatient);
     const total = Number(r.rows[0]?.total ?? 0);
     await audit(this.db, actor, 'fhir.search', 'Patient', null, { count: total });
     return buildSearchSetBundle(resources, total, selfUrl(`${FHIR_PATH}/Patient`, {
-      name: pattern || undefined, birthdate,
+      name: pattern || undefined, birthdate, identifier,
       _count: String(limit), _offset: skip ? String(skip) : undefined,
     }));
   }

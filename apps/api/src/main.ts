@@ -28,6 +28,7 @@ import { TimelineController, DocumentsController } from './timeline';
 import { MedicationsController } from './medications';
 import { MpiCandidatesController, PatientMergeController } from './mpi';
 import { PractitionerRegistrationController, PrescriptionKindsController } from './practitioners';
+import { RxVerifyController } from './rx-verify';
 import { assertSecurityConfig } from './config';
 
 @Module({
@@ -38,7 +39,7 @@ import { assertSecurityConfig } from './config';
     TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController,
     LgpdController,PatientLgpdController,EncounterPrescriptionsController,PatientPrescriptionsController,PrescriptionsController,
     TimelineController,DocumentsController,MedicationsController,MpiCandidatesController,PatientMergeController,
-    HospitalOrdersResultsController,PerfMetricsController,PractitionerRegistrationController,PrescriptionKindsController,
+    HospitalOrdersResultsController,PerfMetricsController,PractitionerRegistrationController,PrescriptionKindsController,RxVerifyController,
     AuditController
   ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]
@@ -75,6 +76,9 @@ async function bootstrap(){
   app.use('/auth/sso/callback', rateLimiter('auth.sso.callback','Excesso de callbacks SSO; tente mais tarde',30,15));
   // Rota pública do Guia ITI (VALIDAR): sem limite por IP do validador, mas com teto defensivo.
   app.use('/verify', rateLimiter('verify.public','Excesso de consultas de validação; tente mais tarde',120,15));
+  // Verificação pública da receita (030): além do bloqueio por documento após
+  // 5 códigos errados, teto por IP contra varredura de tokens/códigos.
+  app.use('/rx-verify', rateLimiter('rx.verify.public','Excesso de consultas de verificação; tente mais tarde',60,15));
   app.use((req:any,res:any,next:any)=>{res.setHeader('Cache-Control','no-store'); next();});
   // Request-Id (P0-05/C5): aceita um id saudável do chamador ou gera um; sempre
   // ecoado no header e propagado ao contexto (audit_events.details.requestId).

@@ -43,7 +43,8 @@ test('PDF imprime URL + código e desenha o QR (retângulos no content stream)',
     indication: 'Teste', instructions: 'Teste', signedAt: '2026-10-23T12:00:00Z', payloadSha256: 'x',
   };
   const withV = buildPrescriptionPdf({ ...base, verification: { url: 'https://app.invalid/verificar/abc', code: 'ABCD-EFGH' } }).toString('latin1');
-  assert.ok(withV.includes('ABCD-EFGH') && withV.includes('https://app.invalid/verificar/abc'));
+  assert.equal(/Endere.o: (\S+)\)/.exec(withV)?.[1], 'https://app.invalid/verificar/abc', 'URL impressa');
+  assert.equal(/C.digo de verifica..o: ([0-9A-Z-]+)\)/.exec(withV)?.[1], 'ABCD-EFGH', 'código impresso');
   assert.ok((withV.match(/ re\n/g) ?? []).length > 100, 'módulos do QR desenhados');
   const without = buildPrescriptionPdf(base).toString('latin1');
   assert.equal((without.match(/ re\n/g) ?? []).length, 0);

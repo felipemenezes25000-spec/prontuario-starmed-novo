@@ -67,6 +67,11 @@ test.describe('Jornada 4 — Prontuário 360° + MPI', () => {
       body: { fullName: patientNoAllergyName, birthDate: '1992-07-07', administrativeGender: 'male' }
     });
     patientNoAllergyId = p2.id;
+    // Lote 5 (MPI probabilístico): grafia vizinha, mesmo nascimento e sexo → 'possível'.
+    await api('/patients', {
+      token: doctorToken, method: 'POST', expected: 201,
+      body: { fullName: patientNoAllergyName.replace('Sem Alergia', 'Sem Allergia'), birthDate: '1992-07-07', administrativeGender: 'male' }
+    });
   });
 
   test('UI: linha do tempo honesta, alto risco, documentos versionados (gatilho 022)', async ({ page }) => {
@@ -113,6 +118,18 @@ test.describe('Jornada 4 — Prontuário 360° + MPI', () => {
     await page.getByRole('button', { name: 'Visão 360° do prontuário' }).click();
     await page.getByRole('tab', { name: 'Alto risco' }).click();
     await expect(page.locator('.r360-notice-warn')).toContainText('NÃO significa ausência de alergia');
+
+    // Duplicidades (MPI): sugestão para revisão humana; unir exige justificativa + conferência.
+    await page.getByRole('tab', { name: 'Duplicidades' }).click();
+    const cand = page.locator('.mpi-item').filter({ hasText: 'Sem Allergia' });
+    await expect(cand).toContainText('Semelhança de identidade');
+    await expect(cand).toContainText('Possível');
+    await cand.getByRole('button', { name: 'Revisar e unir' }).click();
+    const unir = page.getByRole('button', { name: 'Unir cadastros' });
+    await expect(unir).toBeDisabled();
+    await page.getByLabel('Justificativa (mínimo 20 caracteres)').fill('Conferência sintética da jornada E2E de MPI.');
+    await expect(unir).toBeDisabled();
+    await page.getByRole('button', { name: 'Cancelar' }).click();
   });
 
   test('backend: none_recorded, candidatas MPI e merge de corrente sem DELETE', async () => {

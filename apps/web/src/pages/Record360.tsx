@@ -5,6 +5,7 @@ import {
   type DocumentRow, type DocumentVersions, type MedicationsBundle, type Patient, type Session, type TimelineItem
 } from '../api';
 import { measureEvent } from './perf-metrics';
+import { MpiReview } from './MpiReview';
 
 /**
  * PRONTUÁRIO 360° (P1/ST-P1-XXX parte web) — visão consolidada do paciente sobre
@@ -25,7 +26,7 @@ import { measureEvent } from './perf-metrics';
  */
 
 type Alert=(text:string,kind?:'success'|'error'|'info')=>void;
-type R360Tab='timeline'|'risk'|'documents';
+type R360Tab='timeline'|'risk'|'documents'|'duplicates';
 
 const NETWORK='Não foi possível conectar ao StarMed. Tente novamente.';
 const BREAK_GLASS='Acesso a este prontuário exige autorização break-glass. Abra o prontuário do paciente, informe o motivo no painel de break-glass e tente novamente.';
@@ -109,7 +110,8 @@ function InlineError({text}:{text:string}){
 const TABS:{key:R360Tab;label:string}[]=[
   {key:'timeline',label:'Linha do tempo'},
   {key:'risk',label:'Alto risco'},
-  {key:'documents',label:'Documentos'}
+  {key:'documents',label:'Documentos'},
+  {key:'duplicates',label:'Duplicidades'}
 ];
 
 export function Record360Page({session,alert,patient,onView}:{
@@ -310,6 +312,9 @@ export function Record360Page({session,alert,patient,onView}:{
       {tab==='timeline'&&timeline}
       {tab==='risk'&&risk}
       {tab==='documents'&&documents}
+      {tab==='duplicates'&&patient&&(session.user.role==='admin'||session.user.role==='doctor'
+        ?<MpiReview session={session} alert={alert} patient={patient} onMerged={()=>{setTab('timeline');void loadTimeline();}}/>
+        :<p className="field-hint">Revisão de duplicidades disponível para médico e administrador.</p>)}
     </div>
   </>;
 }

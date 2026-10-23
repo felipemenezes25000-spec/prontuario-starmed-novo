@@ -167,3 +167,9 @@ input[aria-invalid="true"]{border-color:#b42318}
 .rxv-dl dt{color:#5b6b75;font-weight:600}.rxv-dl dd{margin:0;overflow-wrap:anywhere}
 .rxv-hash{font-family:monospace;font-size:12px}
 .rxv-form{display:grid;gap:8px;margin-top:16px}
+
+/* Revisão de duplicidades (MPI). */
+.mpi-list{list-style:none;padding:0;display:grid;gap:8px}
+.mpi-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px;border:1px solid #d6dee3;border-radius:8px}
+.mpi-merge{margin-top:12px;padding:12px;border:1px solid #b42318;border-radius:8px}
+.mpi-merge fieldset{border:0;padding:0;display:grid;gap:6px}

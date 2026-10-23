@@ -1,3 +1,4 @@
+import { compareIdentity, MPI_RULE_VERSION, normalizeMpiName, type MpiPerson, type MpiScore } from './mpi-matcher';
 import { BadRequestException, Body, ConflictException, Controller, Get, NotFoundException, Param, Post, Req } from '@nestjs/common';
 import { z } from 'zod';
 import { Db } from './db';
@@ -30,6 +31,10 @@ type ReqWithActor = { actor: Actor; headers?: Record<string, unknown> };
  *  comparação; o SQL só faz o filtro grosseiro por data de nascimento. */
 export function normalizePatientName(name: string): string {
   return name.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+function scoreFields(s: MpiScore | undefined) {
+  return s ? { score: s.score, classification: s.classification, features: s.features, ruleVersion: MPI_RULE_VERSION } : {};
 }
 
 export type DuplicatePatient = { id: string; fullName: string; birthDate: string; externalId: string | null };
@@ -115,7 +120,7 @@ export class MpiCandidatesController {
     const id = parse(uuid, rawId);
     await ensurePatient(this.db, id, actor.org_id);
     const index = await this.db.query(
-      'SELECT full_name, birth_date FROM patients WHERE id=$1 AND org_id=$2', [id, actor.org_id]);
+      'SELECT full_name, birth_date, administrative_gender, phone, cpf, cns FROM patients WHERE id=$1 AND org_id=$2', [id, actor.org_id]);
     if (!index.rowCount) throw new NotFoundException('Paciente não encontrado');
     const idx = index.rows[0];
     // Filtro grosseiro no banco (nascimento igual reduz o conjunto a dezenas);
@@ -130,8 +135,39 @@ export class MpiCandidatesController {
       { id, fullName: String(idx.full_name), birthDate: birthDateText(idx.birth_date) },
       pool.rows.map((r: DuplicatePatient & { birthDate: string | Date }) =>
         ({ id: r.id, fullName: String(r.fullName), birthDate: birthDateText(r.birthDate), externalId: r.externalId ?? null })));
-    await audit(this.db, actor, 'mpi.candidates.read', 'patient', id, { candidates: pairs.length });
-    return pairs;
+    // Lote 5 (porte do StarMedMpiMatcher): além do critério EXATO acima, pares
+    // probabilísticos para revisão humana. Bloco = mesmo ano de nascimento OU
+    // mesmo prefixo de 3 letras do 1º nome OU mesmo CPF/CNS; nunca une ninguém.
+    const indexPerson: MpiPerson = { id, name: String(idx.full_name), birthDate: birthDateText(idx.birth_date),
+      sex: idx.administrative_gender ?? null, phone: idx.phone ?? null, cpf: idx.cpf ?? null, cns: idx.cns ?? null };
+    const prefix = normalizeMpiName(indexPerson.name).split(' ')[0]?.slice(0, 3) ?? '';
+    const block = await this.db.query(
+      `SELECT id, full_name, birth_date, administrative_gender, phone, cpf, cns, external_id
+         FROM patients
+        WHERE org_id = $1 AND id <> $2 AND merged_into_id IS NULL
+          AND (extract(year FROM birth_date) = extract(year FROM $3::date)
+               OR ($4 <> '' AND lower(full_name) LIKE $4 || '%')
+               OR ($5::text IS NOT NULL AND cpf = $5) OR ($6::text IS NOT NULL AND cns = $6))
+        LIMIT 500`, [actor.org_id, id, indexPerson.birthDate, prefix, indexPerson.cpf, indexPerson.cns]);
+    const exactIds = new Set(pairs.map(p => p.patient.id));
+    const scored = block.rows.map((r: any) => {
+      const other: MpiPerson = { id: r.id, name: String(r.full_name), birthDate: birthDateText(r.birth_date),
+        sex: r.administrative_gender ?? null, phone: r.phone ?? null, cpf: r.cpf ?? null, cns: r.cns ?? null };
+      return { r, other, s: compareIdentity(indexPerson, other) };
+    });
+    const byId = new Map(scored.map(x => [x.r.id, x.s]));
+    const enrichedExact = pairs.map(p => ({ ...p, ...scoreFields(byId.get(p.patient.id)) }));
+    const probabilistic = scored
+      .filter(x => !exactIds.has(x.r.id) && !x.s.hardConflict && x.s.classification !== 'non_match')
+      .sort((a, b) => b.s.score - a.s.score).slice(0, 50)
+      .map(x => ({
+        patient: { id: x.r.id, fullName: String(x.r.full_name), birthDate: birthDateText(x.r.birth_date), externalId: x.r.external_id ?? null },
+        reason: x.s.features.cpf_igual ? 'same-cpf' : x.s.features.cns_igual ? 'same-cns' : 'probabilistic',
+        ...scoreFields(x.s),
+      }));
+    const result = [...enrichedExact, ...probabilistic];
+    await audit(this.db, actor, 'mpi.candidates.read', 'patient', id, { candidates: result.length, ruleVersion: MPI_RULE_VERSION });
+    return result;
   }
 }
 

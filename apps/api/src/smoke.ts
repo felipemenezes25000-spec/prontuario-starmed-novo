@@ -211,6 +211,16 @@ async function main(){
   assert.equal(fhirByCns.total,1);
   assert.ok(fhirByCns.entry?.[0].resource.identifier.some(i=>i.value===cpf),'Patient FHIR carrega o CPF da RNDS');
   await request('/fhir/R4/Patient?identifier='+encodeURIComponent('urn:outro|123'),token,'GET',undefined,400);
+  // Lote 5 (MPI probabilístico): grafia vizinha + mesmo nascimento vira candidata
+  // 'possible' para revisão humana; features só com pesos (sem nome).
+  const twinA=await request<Id>('/patients',token,'POST',{fullName:'Joana Mpi '+nonce,birthDate:'1975-03-04',administrativeGender:'female'},201);
+  const twinB=await request<Id>('/patients',token,'POST',{fullName:'Joanna Mpi '+nonce,birthDate:'1975-03-04',administrativeGender:'female'},201);
+  const cands=await request<Array<{patient:{id:string};reason:string;classification?:string;features?:Record<string,number>}>>('/patients/'+twinA.id+'/duplicates',token);
+  const hit=cands.find(c=>c.patient.id===twinB.id);
+  assert.ok(hit,'grafia vizinha aparece como candidata');
+  assert.equal(hit!.reason,'probabilistic');
+  assert.equal(hit!.classification,'possible');
+  assert.ok(!JSON.stringify(hit!.features).toLowerCase().includes('joan'),'features sem PHI');
   console.log('StarMed smoke test passed: auth, patient history, notes, immutable addenda, FHIR, booking conflicts, prescription+PDF, rejected foreign cert, critical-result ack, audit readback, BR identifiers (CPF/CNS)');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

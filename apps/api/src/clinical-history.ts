@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Db } from './db';
 import { parse, uuid } from './domain';
 import { Actor, audit, requestContext, requireCareContext, requireRole } from './security';
+import { CID10_SYSTEM, normalizeCid10 } from './terminology';
 
 type ReqWithActor = { actor:Actor; headers?: Record<string, unknown> };
 const breakGlassOf = (req: ReqWithActor) => req.headers?.['x-break-glass-reason'];
@@ -20,7 +21,10 @@ const problemSchema=z.object({
   clinicalStatus:z.enum(['active','resolved']).default('active'),
   verificationStatus:z.enum(['provisional','confirmed']).default('provisional'),
   onsetDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
-}).strict().refine(b=>Boolean(b.codeSystem)===Boolean(b.code),{message:'codeSystem e code devem ser preenchidos juntos'});
+}).strict().refine(b=>Boolean(b.codeSystem)===Boolean(b.code),{message:'codeSystem e code devem ser preenchidos juntos'})
+  // CID-10 da RNDS: o FORMATO é regra dura (código fora do catálogo local continua aceito).
+  .refine(b=>b.codeSystem!==CID10_SYSTEM||normalizeCid10(b.code??'')!==null,{message:'Código CID-10 em formato inválido (ex.: I10, E11.9)',path:['code']})
+  .transform(b=>b.codeSystem===CID10_SYSTEM?{...b,code:normalizeCid10(b.code??'')??b.code}:b);
 
 async function ensurePatient(db:Db, patientId:string,orgId:string) {
   const p=await db.query('SELECT 1 FROM patients WHERE id=$1 AND org_id=$2',[patientId,orgId]);

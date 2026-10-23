@@ -205,6 +205,10 @@ export default function App(){
   const [problems,setProblems]=useState<PatientProblem[]>([]);
   const [allergyForm,setAllergyForm]=useState({substance:'',reaction:'',criticality:'unable-to-assess',verificationStatus:'unconfirmed'});
   const [problemForm,setProblemForm]=useState({display:'',codeSystem:'',code:'',verificationStatus:'provisional'});
+  // Busca CID-10 (catálogo local de atenção primária): preenche código + sistema.
+  const [cidQuery,setCidQuery]=useState('');
+  const [cidResults,setCidResults]=useState<{code:string;display:string}[]>([]);
+  const [cidSystem,setCidSystem]=useState('');
   const [encounter,setEncounter]=useState<Encounter|null>(null);
   const [note,setNote]=useState<ClinicalNote|null>(null);
   const [addenda,setAddenda]=useState<ClinicalAddendum[]>([]);
@@ -242,6 +246,14 @@ export default function App(){
   // Entrada sem sessão staff: 'portal' abre a área do paciente (sessão própria, segregada da clínica).
   const [entryScreen,setEntryScreen]=useState<'staff'|'portal'>('staff');
   const token=session?.accessToken??null;
+  useEffect(()=>{
+    if(!token||cidQuery.trim().length<2){setCidResults([]);return;}
+    const t=setTimeout(()=>{
+      api<{system:string;items:{code:string;display:string}[]}>('/terminology/cid10?limit=8&q='+encodeURIComponent(cidQuery.trim()),token)
+        .then(r=>{setCidResults(r.items);setCidSystem(r.system);}).catch(()=>setCidResults([]));
+    },250);
+    return ()=>clearTimeout(t);
+  },[cidQuery,token]);
   const user=session?.user;
   const isDoctor=user?.role==='doctor';
   const hasUnsavedChanges=!!note && JSON.stringify(sections)!==JSON.stringify(note.content.sections);
@@ -670,6 +682,9 @@ export default function App(){
               {isDoctor&&<details className="clinical-details"><summary>+ Registrar problema</summary>
                 <form className="stack gap-3" onSubmit={createProblem}>
                   <label>Descrição clínica<input required minLength={3} maxLength={300} value={problemForm.display} onChange={e=>setProblemForm({...problemForm,display:e.target.value})}/></label>
+                  <label>Buscar CID-10 (opcional)<input value={cidQuery} onChange={e=>setCidQuery(e.target.value)} placeholder="Ex.: hipertensão ou I10" aria-describedby="cid-hint" autoComplete="off"/>
+                    <small id="cid-hint" className="field-hint">Catálogo local de atenção primária; código fora dele pode ser digitado abaixo.</small></label>
+                  {cidResults.length>0&&<ul className="cid-results" aria-label="Sugestões CID-10">{cidResults.map(c=><li key={c.code}><button type="button" className="text-button" onClick={()=>{setProblemForm({...problemForm,code:c.code,codeSystem:cidSystem,display:problemForm.display||c.display});setCidQuery('');setCidResults([]);}}><strong>{c.code}</strong> — {c.display}</button></li>)}</ul>}
                   <label>Código (opcional)<input value={problemForm.code} onChange={e=>setProblemForm({...problemForm,code:e.target.value})} placeholder="CID-10/CID-11/SNOMED"/></label>
                   <label>URI do sistema (quando codificado)<input value={problemForm.codeSystem} onChange={e=>setProblemForm({...problemForm,codeSystem:e.target.value})} placeholder="https://..."/></label>
                   <label>Confirmação<select value={problemForm.verificationStatus} onChange={e=>setProblemForm({...problemForm,verificationStatus:e.target.value})}><option value="provisional">Hipótese provisória</option><option value="confirmed">Confirmado</option></select></label>

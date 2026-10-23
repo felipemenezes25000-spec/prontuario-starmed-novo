@@ -211,6 +211,13 @@ async function main(){
   assert.equal(fhirByCns.total,1);
   assert.ok(fhirByCns.entry?.[0].resource.identifier.some(i=>i.value===cpf),'Patient FHIR carrega o CPF da RNDS');
   await request('/fhir/R4/Patient?identifier='+encodeURIComponent('urn:outro|123'),token,'GET',undefined,400);
+  // Lote 6 (CID-10): busca no catálogo local; formato é regra dura, código fora da lista é aceito.
+  const cid=await request<{system:string;items:Array<{code:string}>}>('/terminology/cid10?q=hipertensao',token);
+  assert.ok(cid.items.some(i=>i.code==='I10'),'busca sem acento encontra I10');
+  const prob=await request<any>('/patients/'+patient.id+'/problems',token,'POST',{display:'Hipertensão (dado sintético)',codeSystem:cid.system,code:'i10'},201);
+  assert.equal(prob.code,'I10','código normalizado');
+  await request('/patients/'+patient.id+'/problems',token,'POST',{display:'Código inválido sintético',codeSystem:cid.system,code:'XX'},400);
+  await request('/patients/'+patient.id+'/problems',token,'POST',{display:'Fora do catálogo local',codeSystem:cid.system,code:'Z99.9'},201);
   // Lote 5 (MPI probabilístico): grafia vizinha + mesmo nascimento vira candidata
   // 'possible' para revisão humana; features só com pesos (sem nome).
   const twinA=await request<Id>('/patients',token,'POST',{fullName:'Joana Mpi '+nonce,birthDate:'1975-03-04',administrativeGender:'female'},201);

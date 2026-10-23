@@ -29,6 +29,7 @@ import { MedicationsController } from './medications';
 import { MpiCandidatesController, PatientMergeController } from './mpi';
 import { PractitionerRegistrationController, PrescriptionKindsController } from './practitioners';
 import { RxVerifyController } from './rx-verify';
+import { TerminologyController } from './terminology';
 import { assertSecurityConfig } from './config';
 
 @Module({
@@ -39,7 +40,7 @@ import { assertSecurityConfig } from './config';
     TeleconsultController,AiClinicalController,StaffPortalController,PatientPortalController,HospitalController,ProductController,
     LgpdController,PatientLgpdController,EncounterPrescriptionsController,PatientPrescriptionsController,PrescriptionsController,
     TimelineController,DocumentsController,MedicationsController,MpiCandidatesController,PatientMergeController,
-    HospitalOrdersResultsController,PerfMetricsController,PractitionerRegistrationController,PrescriptionKindsController,RxVerifyController,
+    HospitalOrdersResultsController,PerfMetricsController,PractitionerRegistrationController,PrescriptionKindsController,RxVerifyController,TerminologyController,
     AuditController
   ],
   providers:[Db,MfaService,OidcService,{provide:APP_GUARD,useClass:JwtGuard}]

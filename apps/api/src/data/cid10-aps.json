@@ -1,0 +1,922 @@
+{
+  "_meta": {
+    "source": "Porte de ref-starmed backend-dotnet/.../Cid10Database.cs: subconjunto de CID-10 frequente em atencao primaria; descricoes da tabela CID-10 (OMS/DATASUS).",
+    "version": "cid10-aps-2026-10-23",
+    "system": "http://www.saude.gov.br/fhir/r4/CodeSystem/BRCID10",
+    "scope": "SUBCONJUNTO para autocomplete. Codigo fora desta lista NAO e invalido: e apenas \"fora do catalogo local\"."
+  },
+  "codes": [
+    {
+      "code": "A09",
+      "display": "Diarreia e gastroenterite de origem infecciosa presumível"
+    },
+    {
+      "code": "A09.0",
+      "display": "Outra gastroenterite e colite de origem infecciosa"
+    },
+    {
+      "code": "A15",
+      "display": "Tuberculose respiratória, com confirmação bacteriológica e histológica"
+    },
+    {
+      "code": "A49.9",
+      "display": "Infecção bacteriana não especificada"
+    },
+    {
+      "code": "A90",
+      "display": "Dengue [dengue clássico]"
+    },
+    {
+      "code": "A91",
+      "display": "Febre hemorrágica devida ao vírus do dengue"
+    },
+    {
+      "code": "B00.9",
+      "display": "Infecção pelo vírus do herpes simples, não especificada"
+    },
+    {
+      "code": "B01.9",
+      "display": "Varicela sem complicação"
+    },
+    {
+      "code": "B02.9",
+      "display": "Herpes zoster sem complicação"
+    },
+    {
+      "code": "B34.9",
+      "display": "Infecção viral não especificada"
+    },
+    {
+      "code": "B35.1",
+      "display": "Tinha das unhas"
+    },
+    {
+      "code": "B35.3",
+      "display": "Tinha do pé"
+    },
+    {
+      "code": "B35.4",
+      "display": "Tinha do corpo"
+    },
+    {
+      "code": "B36.0",
+      "display": "Pitiríase versicolor"
+    },
+    {
+      "code": "B37.0",
+      "display": "Estomatite por Candida"
+    },
+    {
+      "code": "B37.3",
+      "display": "Candidíase da vulva e da vagina"
+    },
+    {
+      "code": "B77.9",
+      "display": "Ascaridíase não especificada"
+    },
+    {
+      "code": "B82.9",
+      "display": "Parasitose intestinal não especificada"
+    },
+    {
+      "code": "D22.9",
+      "display": "Nevo melanocítico, não especificado"
+    },
+    {
+      "code": "D25.9",
+      "display": "Leiomioma do útero, não especificado"
+    },
+    {
+      "code": "D50.0",
+      "display": "Anemia por deficiência de ferro secundária a perda de sangue (crônica)"
+    },
+    {
+      "code": "D50.9",
+      "display": "Anemia por deficiência de ferro não especificada"
+    },
+    {
+      "code": "D64.9",
+      "display": "Anemia não especificada"
+    },
+    {
+      "code": "E03.9",
+      "display": "Hipotireoidismo não especificado"
+    },
+    {
+      "code": "E04.9",
+      "display": "Bócio não-tóxico, não especificado"
+    },
+    {
+      "code": "E05.9",
+      "display": "Tireotoxicose não especificada"
+    },
+    {
+      "code": "E10",
+      "display": "Diabetes mellitus insulino-dependente"
+    },
+    {
+      "code": "E10.9",
+      "display": "Diabetes mellitus insulino-dependente sem complicações"
+    },
+    {
+      "code": "E11",
+      "display": "Diabetes mellitus não-insulino-dependente"
+    },
+    {
+      "code": "E11.2",
+      "display": "Diabetes mellitus não-insulino-dependente com complicações renais"
+    },
+    {
+      "code": "E11.5",
+      "display": "Diabetes mellitus não-insulino-dependente com complicações circulatórias periféricas"
+    },
+    {
+      "code": "E11.9",
+      "display": "Diabetes mellitus não-insulino-dependente sem complicações"
+    },
+    {
+      "code": "E14.9",
+      "display": "Diabetes mellitus não especificado sem complicações"
+    },
+    {
+      "code": "E28.2",
+      "display": "Síndrome do ovário policístico"
+    },
+    {
+      "code": "E55.9",
+      "display": "Deficiência de vitamina D não especificada"
+    },
+    {
+      "code": "E61.1",
+      "display": "Deficiência de ferro"
+    },
+    {
+      "code": "E66.0",
+      "display": "Obesidade devida a excesso de calorias"
+    },
+    {
+      "code": "E66.9",
+      "display": "Obesidade não especificada"
+    },
+    {
+      "code": "E78.0",
+      "display": "Hipercolesterolemia pura"
+    },
+    {
+      "code": "E78.1",
+      "display": "Hipertrigliceridemia pura"
+    },
+    {
+      "code": "E78.2",
+      "display": "Hiperlipidemia mista"
+    },
+    {
+      "code": "E78.5",
+      "display": "Hiperlipidemia não especificada"
+    },
+    {
+      "code": "E79.0",
+      "display": "Hiperuricemia sem sinais de artrite inflamatória e de doença tofácea"
+    },
+    {
+      "code": "E87.6",
+      "display": "Hipopotassemia"
+    },
+    {
+      "code": "F10.2",
+      "display": "Transtornos mentais e comportamentais devidos ao uso de álcool - síndrome de dependência"
+    },
+    {
+      "code": "F17.2",
+      "display": "Transtornos mentais e comportamentais devidos ao uso de fumo - síndrome de dependência"
+    },
+    {
+      "code": "F20.9",
+      "display": "Esquizofrenia não especificada"
+    },
+    {
+      "code": "F31.9",
+      "display": "Transtorno afetivo bipolar, não especificado"
+    },
+    {
+      "code": "F32.0",
+      "display": "Episódio depressivo leve"
+    },
+    {
+      "code": "F32.1",
+      "display": "Episódio depressivo moderado"
+    },
+    {
+      "code": "F32.2",
+      "display": "Episódio depressivo grave sem sintomas psicóticos"
+    },
+    {
+      "code": "F32.9",
+      "display": "Episódio depressivo não especificado"
+    },
+    {
+      "code": "F33.0",
+      "display": "Transtorno depressivo recorrente, episódio atual leve"
+    },
+    {
+      "code": "F33.1",
+      "display": "Transtorno depressivo recorrente, episódio atual moderado"
+    },
+    {
+      "code": "F33.9",
+      "display": "Transtorno depressivo recorrente sem especificação"
+    },
+    {
+      "code": "F40.0",
+      "display": "Agorafobia"
+    },
+    {
+      "code": "F40.1",
+      "display": "Fobias sociais"
+    },
+    {
+      "code": "F41.0",
+      "display": "Transtorno de pânico [ansiedade paroxística episódica]"
+    },
+    {
+      "code": "F41.1",
+      "display": "Ansiedade generalizada"
+    },
+    {
+      "code": "F41.2",
+      "display": "Transtorno misto ansioso e depressivo"
+    },
+    {
+      "code": "F41.9",
+      "display": "Transtorno ansioso não especificado"
+    },
+    {
+      "code": "F42",
+      "display": "Transtorno obsessivo-compulsivo"
+    },
+    {
+      "code": "F43.0",
+      "display": "Reação aguda ao estresse"
+    },
+    {
+      "code": "F43.1",
+      "display": "Estado de estresse pós-traumático"
+    },
+    {
+      "code": "F43.2",
+      "display": "Transtornos de adaptação"
+    },
+    {
+      "code": "F45.0",
+      "display": "Transtorno de somatização"
+    },
+    {
+      "code": "F51.0",
+      "display": "Insônia não-orgânica"
+    },
+    {
+      "code": "F90.0",
+      "display": "Distúrbios da atividade e da atenção (TDAH)"
+    },
+    {
+      "code": "G40.9",
+      "display": "Epilepsia não especificada"
+    },
+    {
+      "code": "G43.0",
+      "display": "Enxaqueca sem aura [enxaqueca comum]"
+    },
+    {
+      "code": "G43.1",
+      "display": "Enxaqueca com aura [enxaqueca clássica]"
+    },
+    {
+      "code": "G43.9",
+      "display": "Enxaqueca sem especificação"
+    },
+    {
+      "code": "G44.2",
+      "display": "Cefaleia tensional"
+    },
+    {
+      "code": "G47.0",
+      "display": "Distúrbios do início e da manutenção do sono [insônias]"
+    },
+    {
+      "code": "G47.3",
+      "display": "Apneia de sono"
+    },
+    {
+      "code": "G51.0",
+      "display": "Paralisia de Bell"
+    },
+    {
+      "code": "G54.1",
+      "display": "Transtornos do plexo lombossacro"
+    },
+    {
+      "code": "G56.0",
+      "display": "Síndrome do túnel do carpo"
+    },
+    {
+      "code": "H10.1",
+      "display": "Conjuntivite aguda atópica"
+    },
+    {
+      "code": "H10.9",
+      "display": "Conjuntivite não especificada"
+    },
+    {
+      "code": "H52.1",
+      "display": "Miopia"
+    },
+    {
+      "code": "H52.4",
+      "display": "Presbiopia"
+    },
+    {
+      "code": "H60.9",
+      "display": "Otite externa não especificada"
+    },
+    {
+      "code": "H61.2",
+      "display": "Cerume impactado"
+    },
+    {
+      "code": "H65.9",
+      "display": "Otite média não-supurativa não especificada"
+    },
+    {
+      "code": "H66.9",
+      "display": "Otite média não especificada"
+    },
+    {
+      "code": "H81.1",
+      "display": "Vertigem paroxística benigna"
+    },
+    {
+      "code": "H93.1",
+      "display": "Zumbido"
+    },
+    {
+      "code": "I10",
+      "display": "Hipertensão essencial (primária)"
+    },
+    {
+      "code": "I11.9",
+      "display": "Doença cardíaca hipertensiva sem insuficiência cardíaca (congestiva)"
+    },
+    {
+      "code": "I20.9",
+      "display": "Angina pectoris, não especificada"
+    },
+    {
+      "code": "I25.1",
+      "display": "Doença aterosclerótica do coração"
+    },
+    {
+      "code": "I42.0",
+      "display": "Cardiomiopatia dilatada"
+    },
+    {
+      "code": "I48",
+      "display": "Flutter e fibrilação atrial"
+    },
+    {
+      "code": "I49.9",
+      "display": "Arritmia cardíaca não especificada"
+    },
+    {
+      "code": "I50.9",
+      "display": "Insuficiência cardíaca não especificada"
+    },
+    {
+      "code": "I63.9",
+      "display": "Infarto cerebral não especificado"
+    },
+    {
+      "code": "I64",
+      "display": "Acidente vascular cerebral, não especificado como hemorrágico ou isquêmico"
+    },
+    {
+      "code": "I73.9",
+      "display": "Doença vascular periférica não especificada"
+    },
+    {
+      "code": "I80.2",
+      "display": "Flebite e tromboflebite de outros vasos profundos dos membros inferiores"
+    },
+    {
+      "code": "I83.9",
+      "display": "Varizes dos membros inferiores sem úlcera ou inflamação"
+    },
+    {
+      "code": "I84.9",
+      "display": "Hemorroidas não especificadas sem complicação"
+    },
+    {
+      "code": "J00",
+      "display": "Nasofaringite aguda [resfriado comum]"
+    },
+    {
+      "code": "J01.9",
+      "display": "Sinusite aguda não especificada"
+    },
+    {
+      "code": "J02.9",
+      "display": "Faringite aguda não especificada"
+    },
+    {
+      "code": "J03.9",
+      "display": "Amigdalite aguda não especificada"
+    },
+    {
+      "code": "J04.0",
+      "display": "Laringite aguda"
+    },
+    {
+      "code": "J06.9",
+      "display": "Infecção aguda das vias aéreas superiores não especificada"
+    },
+    {
+      "code": "J11.1",
+      "display": "Influenza [gripe] devida a vírus não identificado, com outras manifestações respiratórias"
+    },
+    {
+      "code": "J15.9",
+      "display": "Pneumonia bacteriana não especificada"
+    },
+    {
+      "code": "J18.9",
+      "display": "Pneumonia não especificada"
+    },
+    {
+      "code": "J20.9",
+      "display": "Bronquite aguda não especificada"
+    },
+    {
+      "code": "J30.1",
+      "display": "Rinite alérgica devida a pólen"
+    },
+    {
+      "code": "J30.4",
+      "display": "Rinite alérgica não especificada"
+    },
+    {
+      "code": "J31.0",
+      "display": "Rinite crônica"
+    },
+    {
+      "code": "J32.9",
+      "display": "Sinusite crônica não especificada"
+    },
+    {
+      "code": "J34.2",
+      "display": "Desvio do septo nasal"
+    },
+    {
+      "code": "J40",
+      "display": "Bronquite não especificada como aguda ou crônica"
+    },
+    {
+      "code": "J42",
+      "display": "Bronquite crônica não especificada"
+    },
+    {
+      "code": "J44.1",
+      "display": "Doença pulmonar obstrutiva crônica com exacerbação aguda, não especificada"
+    },
+    {
+      "code": "J44.9",
+      "display": "Doença pulmonar obstrutiva crônica não especificada"
+    },
+    {
+      "code": "J45.0",
+      "display": "Asma predominantemente alérgica"
+    },
+    {
+      "code": "J45.9",
+      "display": "Asma não especificada"
+    },
+    {
+      "code": "K04.7",
+      "display": "Abscesso periapical sem fístula"
+    },
+    {
+      "code": "K08.1",
+      "display": "Perda de dentes devida a acidente, extração ou doença periodontal local"
+    },
+    {
+      "code": "K21.0",
+      "display": "Doença do refluxo gastroesofágico com esofagite"
+    },
+    {
+      "code": "K21.9",
+      "display": "Doença do refluxo gastroesofágico sem esofagite"
+    },
+    {
+      "code": "K25.9",
+      "display": "Úlcera gástrica sem hemorragia ou perfuração, não especificada como aguda ou crônica"
+    },
+    {
+      "code": "K29.7",
+      "display": "Gastrite não especificada"
+    },
+    {
+      "code": "K30",
+      "display": "Dispepsia"
+    },
+    {
+      "code": "K35.8",
+      "display": "Apendicite aguda, outra e a não especificada"
+    },
+    {
+      "code": "K40.9",
+      "display": "Hérnia inguinal unilateral ou não especificada, sem obstrução ou gangrena"
+    },
+    {
+      "code": "K44.9",
+      "display": "Hérnia diafragmática sem obstrução ou gangrena"
+    },
+    {
+      "code": "K52.9",
+      "display": "Gastroenterite e colite não-infecciosas, não especificadas"
+    },
+    {
+      "code": "K57.3",
+      "display": "Doença diverticular do intestino grosso sem perfuração ou abscesso"
+    },
+    {
+      "code": "K58.9",
+      "display": "Síndrome do intestino irritável sem diarreia"
+    },
+    {
+      "code": "K59.0",
+      "display": "Constipação"
+    },
+    {
+      "code": "K76.0",
+      "display": "Degeneração gordurosa do fígado não classificada em outra parte"
+    },
+    {
+      "code": "K80.2",
+      "display": "Calculose da vesícula biliar sem colecistite"
+    },
+    {
+      "code": "L01.0",
+      "display": "Impetigo [qualquer organismo] [qualquer local]"
+    },
+    {
+      "code": "L02.9",
+      "display": "Abscesso cutâneo, furúnculo e carbúnculo, de localização não especificada"
+    },
+    {
+      "code": "L08.9",
+      "display": "Infecção localizada da pele e do tecido subcutâneo, não especificada"
+    },
+    {
+      "code": "L20.9",
+      "display": "Dermatite atópica, não especificada"
+    },
+    {
+      "code": "L23.9",
+      "display": "Dermatite alérgica de contato, causa não especificada"
+    },
+    {
+      "code": "L25.9",
+      "display": "Dermatite de contato não especificada, causa não especificada"
+    },
+    {
+      "code": "L30.9",
+      "display": "Dermatite não especificada"
+    },
+    {
+      "code": "L40.0",
+      "display": "Psoríase vulgar"
+    },
+    {
+      "code": "L50.9",
+      "display": "Urticária não especificada"
+    },
+    {
+      "code": "L60.0",
+      "display": "Unha encravada"
+    },
+    {
+      "code": "L65.9",
+      "display": "Alopecia não-cicatricial, não especificada"
+    },
+    {
+      "code": "L70.0",
+      "display": "Acne vulgar"
+    },
+    {
+      "code": "L72.0",
+      "display": "Cisto epidérmico"
+    },
+    {
+      "code": "L82",
+      "display": "Ceratose seborreica"
+    },
+    {
+      "code": "M06.9",
+      "display": "Artrite reumatoide não especificada"
+    },
+    {
+      "code": "M10.9",
+      "display": "Gota não especificada"
+    },
+    {
+      "code": "M15.9",
+      "display": "Poliartrose não especificada"
+    },
+    {
+      "code": "M17.9",
+      "display": "Gonartrose não especificada"
+    },
+    {
+      "code": "M19.9",
+      "display": "Artrose não especificada"
+    },
+    {
+      "code": "M25.5",
+      "display": "Dor articular"
+    },
+    {
+      "code": "M47.9",
+      "display": "Espondilose não especificada"
+    },
+    {
+      "code": "M50.1",
+      "display": "Transtorno de disco cervical com radiculopatia"
+    },
+    {
+      "code": "M51.1",
+      "display": "Transtornos de discos lombares e de outros discos intervertebrais com radiculopatia"
+    },
+    {
+      "code": "M54.2",
+      "display": "Cervicalgia"
+    },
+    {
+      "code": "M54.4",
+      "display": "Lumbago com ciática"
+    },
+    {
+      "code": "M54.5",
+      "display": "Dor lombar baixa"
+    },
+    {
+      "code": "M54.9",
+      "display": "Dorsalgia não especificada"
+    },
+    {
+      "code": "M62.8",
+      "display": "Outros transtornos especificados dos músculos"
+    },
+    {
+      "code": "M65.9",
+      "display": "Sinovite e tenossinovite não especificadas"
+    },
+    {
+      "code": "M67.4",
+      "display": "Ganglion"
+    },
+    {
+      "code": "M72.2",
+      "display": "Fibromatose da fáscia plantar [Fasciíte plantar]"
+    },
+    {
+      "code": "M75.1",
+      "display": "Síndrome do manguito rotador"
+    },
+    {
+      "code": "M75.5",
+      "display": "Bursite do ombro"
+    },
+    {
+      "code": "M77.1",
+      "display": "Epicondilite lateral"
+    },
+    {
+      "code": "M79.1",
+      "display": "Mialgia"
+    },
+    {
+      "code": "M79.3",
+      "display": "Paniculite não especificada"
+    },
+    {
+      "code": "M79.6",
+      "display": "Dor em membro"
+    },
+    {
+      "code": "M81.9",
+      "display": "Osteoporose não especificada"
+    },
+    {
+      "code": "N10",
+      "display": "Nefrite túbulo-intersticial aguda [Pielonefrite aguda]"
+    },
+    {
+      "code": "N18.9",
+      "display": "Insuficiência renal crônica não especificada"
+    },
+    {
+      "code": "N20.0",
+      "display": "Cálculo do rim"
+    },
+    {
+      "code": "N23",
+      "display": "Cólica renal não especificada"
+    },
+    {
+      "code": "N30.0",
+      "display": "Cistite aguda"
+    },
+    {
+      "code": "N30.9",
+      "display": "Cistite não especificada"
+    },
+    {
+      "code": "N39.0",
+      "display": "Infecção do trato urinário de localização não especificada"
+    },
+    {
+      "code": "N40",
+      "display": "Hiperplasia da próstata"
+    },
+    {
+      "code": "N41.0",
+      "display": "Prostatite aguda"
+    },
+    {
+      "code": "N48.1",
+      "display": "Balanopostite"
+    },
+    {
+      "code": "N71.9",
+      "display": "Doença inflamatória do útero, não especificada"
+    },
+    {
+      "code": "N72",
+      "display": "Doença inflamatória do colo do útero"
+    },
+    {
+      "code": "N73.0",
+      "display": "Parametrite e celulite pélvica agudas"
+    },
+    {
+      "code": "N76.0",
+      "display": "Vaginite aguda"
+    },
+    {
+      "code": "N77.1",
+      "display": "Vaginite em doenças infecciosas e parasitárias classificadas em outra parte"
+    },
+    {
+      "code": "N80.9",
+      "display": "Endometriose não especificada"
+    },
+    {
+      "code": "N91.2",
+      "display": "Amenorreia não especificada"
+    },
+    {
+      "code": "N92.0",
+      "display": "Menstruação excessiva e frequente com ciclo regular"
+    },
+    {
+      "code": "N92.1",
+      "display": "Menstruação excessiva e frequente com ciclo irregular"
+    },
+    {
+      "code": "N94.6",
+      "display": "Dismenorreia não especificada"
+    },
+    {
+      "code": "N95.1",
+      "display": "Estados da menopausa e do climatério feminino"
+    },
+    {
+      "code": "O80",
+      "display": "Parto único espontâneo"
+    },
+    {
+      "code": "R00.0",
+      "display": "Taquicardia não especificada"
+    },
+    {
+      "code": "R00.2",
+      "display": "Palpitações"
+    },
+    {
+      "code": "R05",
+      "display": "Tosse"
+    },
+    {
+      "code": "R06.0",
+      "display": "Dispneia"
+    },
+    {
+      "code": "R07.4",
+      "display": "Dor torácica não especificada"
+    },
+    {
+      "code": "R10.4",
+      "display": "Outras dores abdominais e as não especificadas"
+    },
+    {
+      "code": "R11",
+      "display": "Náusea e vômitos"
+    },
+    {
+      "code": "R19.4",
+      "display": "Alterações do hábito intestinal"
+    },
+    {
+      "code": "R21",
+      "display": "Eritema e outras erupções cutâneas não-especificadas"
+    },
+    {
+      "code": "R25.2",
+      "display": "Cãibra e espasmo"
+    },
+    {
+      "code": "R42",
+      "display": "Tontura e instabilidade"
+    },
+    {
+      "code": "R50.9",
+      "display": "Febre não especificada"
+    },
+    {
+      "code": "R51",
+      "display": "Cefaleia"
+    },
+    {
+      "code": "R53",
+      "display": "Mal-estar e fadiga"
+    },
+    {
+      "code": "R56.0",
+      "display": "Convulsões febris"
+    },
+    {
+      "code": "R63.4",
+      "display": "Perda de peso anormal"
+    },
+    {
+      "code": "R73.0",
+      "display": "Anomalias da tolerância à glicose"
+    },
+    {
+      "code": "S61.0",
+      "display": "Ferimento dos dedos sem lesão da unha"
+    },
+    {
+      "code": "S80.0",
+      "display": "Contusão do joelho"
+    },
+    {
+      "code": "S93.4",
+      "display": "Entorse e distensão do tornozelo"
+    },
+    {
+      "code": "T14.0",
+      "display": "Traumatismo superficial de região não especificada do corpo"
+    },
+    {
+      "code": "T78.4",
+      "display": "Alergia não especificada"
+    },
+    {
+      "code": "Z00.0",
+      "display": "Exame médico geral"
+    },
+    {
+      "code": "Z01.4",
+      "display": "Exame ginecológico (geral) (de rotina)"
+    },
+    {
+      "code": "Z12.3",
+      "display": "Exame especial de rastreamento de neoplasia de mama"
+    },
+    {
+      "code": "Z30.0",
+      "display": "Aconselhamento e orientação gerais sobre contracepção"
+    },
+    {
+      "code": "Z71.1",
+      "display": "Pessoa com medo de queixa para a qual não foi feito diagnóstico"
+    },
+    {
+      "code": "Z72.0",
+      "display": "Uso do tabaco"
+    },
+    {
+      "code": "Z76.0",
+      "display": "Emissão de receitas de repetição"
+    }
+  ]
+}

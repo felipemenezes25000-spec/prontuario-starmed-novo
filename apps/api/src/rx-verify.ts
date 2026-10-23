@@ -18,6 +18,7 @@ import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Unauth
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { maskCpf } from './br-identifiers';
+import { primaryWebOrigin } from './web-origin';
 import { Db } from './db';
 import { parse } from './domain';
 import { brazilDate, KIND_LABEL, type PrescriptionKind } from './prescription-compliance';
@@ -59,7 +60,7 @@ export function newVerification(): NewVerification {
 
 /** URL impressa no PDF/QR. Base configurável; padrão = origem da web. */
 export function rxVerifyUrl(token: string, env: Record<string, string | undefined> = process.env): string {
-  const base = (env.RX_VERIFY_BASE_URL || `${env.WEB_ORIGIN || 'http://localhost:5173'}/verificar`).replace(/\/+$/, '');
+  const base = (env.RX_VERIFY_BASE_URL || `${primaryWebOrigin(env)}/verificar`).replace(/\/+$/, '');
   return `${base}/${token}`;
 }
 

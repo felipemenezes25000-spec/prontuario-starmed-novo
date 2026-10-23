@@ -2,6 +2,7 @@ import { ConflictException, Controller, ForbiddenException, Get, Injectable, Que
 import { createHash, randomBytes } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { Db } from './db';
+import { primaryWebOrigin } from './web-origin';
 import { role as roleSchema } from './domain';
 import { Actor, Public, audit, hashPassword, sessionResponse, sha256Hex } from './security';
 
@@ -180,7 +181,7 @@ export class SsoController {
   ) {
     const config = this.oidc.config();
     const asJson = format === 'json';
-    const webCallback = process.env.SSO_WEB_CALLBACK || (process.env.WEB_ORIGIN || 'http://localhost:5173') + '/auth/callback';
+    const webCallback = process.env.SSO_WEB_CALLBACK || primaryWebOrigin() + '/auth/callback';
     const fail = (reason:string) => {
       if (asJson) return res.status(401).json({ statusCode: 401, message: reason });
       return res.redirect(webCallback + '#error=' + encodeURIComponent(reason));

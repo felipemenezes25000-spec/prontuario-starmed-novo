@@ -49,3 +49,12 @@ test('PDF imprime URL + código e desenha o QR (retângulos no content stream)',
   const without = buildPrescriptionPdf(base).toString('latin1');
   assert.equal((without.match(/ re\n/g) ?? []).length, 0);
 });
+
+test('WEB_ORIGIN com várias origens: CORS recebe a lista; links usam a 1ª; curinga é recusado', async () => {
+  const { webOrigins, primaryWebOrigin } = await import('./web-origin');
+  const env = { WEB_ORIGIN: 'http://localhost:5173, http://127.0.0.1:5173/' };
+  assert.deepEqual(webOrigins(env), ['http://localhost:5173', 'http://127.0.0.1:5173']);
+  assert.equal(primaryWebOrigin(env), 'http://localhost:5173');
+  assert.equal(rxVerifyUrl('tok', env), 'http://localhost:5173/verificar/tok');
+  assert.throws(() => webOrigins({ WEB_ORIGIN: '*' }));
+});

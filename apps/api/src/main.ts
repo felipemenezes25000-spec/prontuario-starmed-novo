@@ -31,6 +31,7 @@ import { PractitionerRegistrationController, PrescriptionKindsController } from 
 import { RxVerifyController } from './rx-verify';
 import { TerminologyController } from './terminology';
 import { assertSecurityConfig } from './config';
+import { webOrigins } from './web-origin';
 
 @Module({
   controllers:[
@@ -65,7 +66,7 @@ async function bootstrap(){
   // cross-origin nesse fluxo — E2E descobriu; o smoke via curl não passa por CORS).
   // X-Teleconsult-Token: token de sala do paciente na sinalização WebRTC — header
   // custom fora da lista também morria no preflight ("Failed to fetch" no poll).
-  app.enableCors({origin:process.env.WEB_ORIGIN || 'http://localhost:5173',methods:'GET,POST,PUT,PATCH,OPTIONS',allowedHeaders:'Authorization,Content-Type,X-Break-Glass-Reason,X-Teleconsult-Token'});
+  app.enableCors({origin:webOrigins(),methods:'GET,POST,PUT,PATCH,OPTIONS',allowedHeaders:'Authorization,Content-Type,X-Break-Glass-Reason,X-Teleconsult-Token'});
   // Rate limit DISTRIBUÍDO (P0-07): contador em Postgres (021), compartilhado
   // entre instâncias — mesmas rotas e mesmos limites de antes, sem segredo novo.
   const rateLimiter=(route:string,message:string,limit:number,minutes:number)=>

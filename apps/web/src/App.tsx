@@ -49,7 +49,11 @@ function ssoErrorText(e:unknown){
   return 'Não foi possível conectar ao StarMed. Verifique sua conexão e tente novamente.';
 }
 function Access({onLogin,notice,onPatientPortal}:{onLogin:(session:Session)=>void;notice?:string;onPatientPortal?:()=>void}){
-  const [email,setEmail]=useState(''),[password,setPassword]=useState('');
+  // Só em desenvolvimento local (vite dev): pré-preenche o admin sintético de
+  // apps/web/.env.local (gitignorado). No build de produção import.meta.env.DEV
+  // é false e estas variáveis não existem — nada é embutido.
+  const devLogin=import.meta.env.DEV?{email:import.meta.env.VITE_DEV_LOGIN_EMAIL??'',password:import.meta.env.VITE_DEV_LOGIN_PASSWORD??''}:{email:'',password:''};
+  const [email,setEmail]=useState(devLogin.email),[password,setPassword]=useState(devLogin.password);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const [stage,setStage]=useState<'credentials'|'mfa'>('credentials');
   const [mfaMode,setMfaMode]=useState<'totp'|'recovery'>('totp');

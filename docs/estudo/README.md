@@ -7,7 +7,7 @@ Quatro frentes separam o StarMed de qualquer alegação competitiva. Cada docume
 | 1 | Uso real controlado | [PROTOCOLO_PILOTO.md](PROTOCOLO_PILOTO.md) | Clínica-piloto + direção clínica + engenharia | Frentes 2 e 3 concluídas para o escopo do piloto |
 | 2 | Homologações externas | [PLANO_HOMOLOGACOES.md](PLANO_HOMOLOGACOES.md) | Engenharia + jurídico + fornecedores | Contratos, certificados e credenciais externas |
 | 3 | Revisão clínica e regulatória | [PACOTE_REVISAO_CLINICA_REGULATORIA.md](PACOTE_REVISAO_CLINICA_REGULATORIA.md) | Médico responsável, farmacêutico, jurídico/regulatório | Nomeação formal dos revisores |
-| 4 | Comparação com o mercado | [PROTOCOLO_ESTUDO_COMPARATIVO.md](PROTOCOLO_ESTUDO_COMPARATIVO.md) + kit em `scripts/estudo/` | Pesquisador independente + médicos voluntários | Acesso autorizado aos sistemas comparados |
+| 4 | Comparação com o mercado | [COMPARATIVO_MERCADO.md](COMPARATIVO_MERCADO.md) (documental, 23/10/2026) + [PROTOCOLO_ESTUDO_COMPARATIVO.md](PROTOCOLO_ESTUDO_COMPARATIVO.md) + kit em `scripts/estudo/` | Pesquisador independente + médicos voluntários | Acesso autorizado aos sistemas comparados |
 
 ## Ordem recomendada
 

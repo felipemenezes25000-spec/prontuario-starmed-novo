@@ -6,7 +6,7 @@
     "dev": "node --watch -r ts-node/register src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "test": "tsx --test src/domain.test.ts src/auth-mfa.test.ts src/pki/pki.test.ts src/signature.test.ts src/fhir-extra.test.ts src/interop/interop.test.ts src/teleconsult.test.ts src/ai-clinical.test.ts src/portal.test.ts src/hospital.test.ts src/product.test.ts src/lgpd.test.ts src/record360.test.ts src/results.test.ts src/teleconsult-room.test.ts src/portal-prefs.test.ts src/interop/interop-extra.test.ts src/perf-metrics.test.ts src/ai-eval.test.ts src/hospital-nursing.test.ts src/ai-injection.test.ts src/br-identifiers.test.ts src/prescription-compliance.test.ts src/medication-terms.test.ts src/migrate.test.ts",
+    "test": "tsx --test src/domain.test.ts src/auth-mfa.test.ts src/pki/pki.test.ts src/signature.test.ts src/fhir-extra.test.ts src/interop/interop.test.ts src/teleconsult.test.ts src/ai-clinical.test.ts src/portal.test.ts src/hospital.test.ts src/product.test.ts src/lgpd.test.ts src/record360.test.ts src/results.test.ts src/teleconsult-room.test.ts src/portal-prefs.test.ts src/interop/interop-extra.test.ts src/perf-metrics.test.ts src/ai-eval.test.ts src/hospital-nursing.test.ts src/ai-injection.test.ts src/br-identifiers.test.ts src/prescription-compliance.test.ts src/medication-terms.test.ts src/migrate.test.ts src/rx-verify.test.ts",
     "bootstrap": "tsx src/bootstrap.ts",
     "migrate": "tsx src/migrate.ts",
     "smoke": "tsx src/smoke.ts",
@@ -23,6 +23,7 @@
     "jose": "^5.9.6",
     "pg": "^8.13.1",
     "pkijs": "^3.4.1",
+    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.24.2"
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@types/node": "^22.13.4",
     "@types/pg": "^8.11.11",
+    "@types/qrcode": "^1.5.6",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"

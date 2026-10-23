@@ -17,6 +17,8 @@ import { qualifySignature, tsaCategoryToHttpStatus } from './signature';
 import { ageInYears, brDate, complianceMissing, formatPhone, KIND_LABEL, kindBlockReason, PRESCRIPTION_KINDS, RX_RULES_VERSION, validUntil, type PrescriberRegistration, type PrescriptionKind } from './prescription-compliance';
 import { loadRegistration } from './practitioners';
 import { kindSubstanceConflict, sameActiveIngredient } from './medication-terms';
+import { create as createQr } from 'qrcode';
+import { createPrescriptionVerification, rxVerifyUrl } from './rx-verify';
 
 /** Fluxo de prescrição eletrônica: rascunho estruturado, segurança medicamentosa
  * (alergias registradas + duplicidade terapêutica), assinatura restrita a médico
@@ -230,6 +232,8 @@ export type PrescriptionPdfInput = {
   prescriber?: PrescriberRegistration | null;
   patientSex?: string | null;
   patientAge?: number | null;
+  /** 030: verificação pública (URL + código) impressa e desenhada como QR. */
+  verification?: { url: string; code: string } | null;
 };
 
 const SEX_LABEL: Record<string, string> = { male: 'Masculino', female: 'Feminino', other: 'Outro', unknown: 'Não informado' };
@@ -262,16 +266,25 @@ const A4 = { width: 595, height: 842 };
 const LINES_PER_PAGE = 52;
 
 type PdfLine = { text: string; size: number };
+type PdfPage = { lines: PdfLine[]; qr?: { size: number; dark: (i: number) => boolean } };
+
+/** Matriz do QR (ECC M). O desenho é vetorial no próprio content stream. */
+function qrMatrix(text: string): PdfPage['qr'] {
+  const qr = createQr(text, { errorCorrectionLevel: 'M' });
+  return { size: qr.modules.size, dark: (i: number) => Boolean(qr.modules.data[i]) };
+}
 
 export function buildPrescriptionPdf(input: PrescriptionPdfInput): Buffer {
   const kind = input.kind ?? 'simple';
   // Antimicrobiano (RDC 471/2021): duas vias idênticas, cada uma começando em
   // página própria — 1ª retida pela farmácia, 2ª com o paciente.
   const vias = kind === 'antimicrobial' ? ['1ª via - retenção da farmácia', '2ª via - paciente'] : [null];
-  const pages: PdfLine[][] = [];
+  const pages: PdfPage[] = [];
+  const qr = input.verification ? qrMatrix(input.verification.url) : undefined;
   for (const via of vias) {
     const lines = prescriptionPdfLines(input, kind, via);
-    for (let i = 0; i < lines.length; i += LINES_PER_PAGE) pages.push(lines.slice(i, i + LINES_PER_PAGE));
+    for (let i = 0; i < lines.length; i += LINES_PER_PAGE)
+      pages.push({ lines: lines.slice(i, i + LINES_PER_PAGE), ...(i === 0 && qr ? { qr } : {}) });
   }
   return renderPdf(pages);
 }
@@ -320,11 +333,18 @@ function prescriptionPdfLines(input: PrescriptionPdfInput, kind: PrescriptionKin
   push('Assinatura digital PAdES (ICP-Brasil): etapa SEPARADA, embarcada neste arquivo com ByteRange (ver POST /prescriptions/:id/sign-pades).', 10);
   push('Sem a etapa PAdES, esta folha NÃO constitui assinatura qualificada.', 10);
   push(`Regras de conformidade aplicadas: ${RX_RULES_VERSION}`, 9);
+  if (input.verification) {
+    push('');
+    push('VERIFICAÇÃO DESTA RECEITA (QR no topo da página)', 11);
+    push(`Endereço: ${input.verification.url}`, 9);
+    push(`Código de verificação: ${input.verification.code}`, 11);
+    push('Sem o código, a consulta mostra só a autenticidade (sem medicamento).', 9);
+  }
   return lines;
 }
 
-function renderPdf(pages: PdfLine[][]): Buffer {
-  if (pages.length === 0) pages.push([]);
+function renderPdf(pages: PdfPage[]): Buffer {
+  if (pages.length === 0) pages.push({ lines: [] });
 
   const fontObj = 3 + pages.length * 2;
   const objects: string[] = [
@@ -336,10 +356,25 @@ function renderPdf(pages: PdfLine[][]): Buffer {
     const contentObj = pageObj + 1;
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4.width} ${A4.height}] /Resources << /Font << /F1 ${fontObj} 0 R >> >> /Contents ${contentObj} 0 R >>`);
     const body = ['BT', `56 ${A4.height - 56} Td`];
-    for (const line of pages[i]) {
+    for (const line of pages[i].lines) {
       body.push(`/F1 ${line.size} Tf`, '14 TL', `(${pdfString(line.text)}) Tj`, 'T*');
     }
-    body.push('ET', '');
+    body.push('ET');
+    // QR vetorial no canto inferior direito, só se não cobrir o texto da página
+    // (URL e código continuam impressos em texto de qualquer forma).
+    const qr = pages[i].qr;
+    const QR_SIDE = 96, QR_X = A4.width - 56 - QR_SIDE, QR_Y = 40;
+    const textBottom = A4.height - 56 - 14 * pages[i].lines.length;
+    if (qr && textBottom > QR_Y + QR_SIDE + 8) {
+      const quiet = 2, cell = QR_SIDE / (qr.size + quiet * 2);
+      body.push('q', '0 g');
+      for (let r = 0; r < qr.size; r++) for (let c = 0; c < qr.size; c++) if (qr.dark(r * qr.size + c)) {
+        const x = QR_X + (c + quiet) * cell, y = QR_Y + QR_SIDE - (r + quiet + 1) * cell;
+        body.push(`${x.toFixed(2)} ${y.toFixed(2)} ${cell.toFixed(2)} ${cell.toFixed(2)} re`);
+      }
+      body.push('f', 'Q');
+    }
+    body.push('');
     const stream = body.join('\n');
     objects.push(`<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}endstream`);
   }
@@ -619,6 +654,9 @@ export class PrescriptionsController {
         quantity: row.quantity, indication: row.indication, instructions: row.instructions
       });
       const signedAt = signedAtDate.toISOString();
+      // 030: verificação pública gravada na MESMA transação; o código só existe
+      // em claro no PDF (o banco guarda HMAC com sal).
+      const verification = await createPrescriptionVerification(c, actor.org_id, id);
       const birthDate = birthIso;
       const pdf = buildPrescriptionPdf({
         prescriptionId: id, encounterId: row.encounter_id, orgName: row.org_name, patientName: row.patient_name,
@@ -628,7 +666,8 @@ export class PrescriptionsController {
         duration: row.duration, times: row.times ?? [], quantity: row.quantity, indication: row.indication,
         instructions: row.instructions, signedAt, payloadSha256: payloadHash,
         kind, validUntil: validity, prescriber: regSnapshot, patientSex: row.administrative_gender ?? null,
-        patientAge: birthDate ? ageInYears(birthDate, signedAtDate) : null
+        patientAge: birthDate ? ageInYears(birthDate, signedAtDate) : null,
+        verification: { url: rxVerifyUrl(verification.token), code: verification.code }
       });
       const pdfSha256 = createHash('sha256').update(pdf).digest('hex');
       const storageKey = `prescriptions/${actor.org_id}/${id}.pdf`;
@@ -654,6 +693,7 @@ export class PrescriptionsController {
         document: document.rows[0],
         document_sha256: pdfSha256,
         payload_sha256: payloadHash,
+        verification_url: rxVerifyUrl(verification.token),
         safetyAlerts: alerts,
         signature_note: 'Documento emitido, persistido (bytes + SHA-256) e hasheado (atestado). A assinatura PAdES/ICP-Brasil é uma etapa SEPARADA (POST /prescriptions/:id/sign-pades): enquanto signature_status="attested", este documento NÃO constitui assinatura qualificada.'
       };

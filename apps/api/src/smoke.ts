@@ -140,6 +140,21 @@ async function main(){
   assert.equal(rxSigned.kind,'simple');
   assert.equal(rxSigned.valid_until,null,'receita simples sem validade regulatória fixa');
 
+  // 030: verificação pública. Token vem da URL; o código só existe impresso no PDF.
+  const rxToken=String(rxSigned.verification_url).split('/').pop()!;
+  const rxCode=/Código de verificação: ([0-9A-Z]{4}-[0-9A-Z]{4})/.exec(pdfBytes.toString('latin1'))?.[1];
+  assert.ok(rxCode,'código de verificação impresso no PDF');
+  const pub=await request<any>('/rx-verify/'+rxToken,null);
+  assert.equal(pub.status,'valid');
+  assert.equal(pub.prescriber.councilNumber,crmNumber);
+  assert.ok(!JSON.stringify(pub).includes('Medicamento Fictício'),'sem código não aparece medicamento');
+  assert.ok(!JSON.stringify(pub).includes('Paciente Fictício'),'sem código o paciente aparece só por iniciais');
+  await request('/rx-verify/'+'x'.repeat(32),null,'GET',undefined,404);
+  const det=await request<any>('/rx-verify/'+rxToken+'/details',null,'POST',{code:rxCode!.toLowerCase()},200);
+  assert.equal(det.medication.name,'Medicamento Fictício 10 mg');
+  for(let i=0;i<5;i++) await request('/rx-verify/'+rxToken+'/details',null,'POST',{code:'ZZZZ-ZZZZ'},401);
+  await request('/rx-verify/'+rxToken+'/details',null,'POST',{code:rxCode},401);
+
   // 029: tipos de receita e registro profissional do prescritor.
   const kinds=await request<{kinds:Array<{kind:string;enabled:boolean;reason:string|null}>}>('/prescription-kinds',token);
   assert.equal(kinds.kinds.find(k=>k.kind==='controlled_special')?.enabled,false,'controle especial nunca sem SNCR');

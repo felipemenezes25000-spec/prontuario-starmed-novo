@@ -1,12 +1,19 @@
 # Atualização de dependências.
 #
-# MENSAL, não semanal, e com teto baixo de PRs abertos — a cadência herdada do
-# repositório legado, mantida aqui por medida: cada execução do Dependabot custa
-# minutos de CI cobrados, e cada PR aberto dispara o ci.yml inteiro.
+# MENSAL, não semanal, e com teto baixo de PRs abertos: cada PR dispara o ci.yml
+# inteiro (minutos cobrados).
 #
-# O que NÃO muda: alerta de segurança do Dependabot é outro caminho, não passa
-# por este arquivo e continua chegando na hora. Aqui só se decide a cadência da
-# atualização de versão de rotina.
+# Monorepo npm com WORKSPACES: existe UM lockfile, na raiz. Entradas separadas
+# para /apps/api e /apps/web geravam PRs que alteravam o package.json do
+# workspace sem o package-lock.json da raiz -> `npm ci` falhava (PR #1, run
+# 39563110232). Por isso há uma única entrada npm em "/", que cobre os
+# workspaces.
+#
+# Saltos MAJOR (NestJS 10->12, TypeScript 5->7, React 18->19, Vite 5->8,
+# Tailwind 3->4, zod 3->4...) ficam FORA da rotina: quebram build (ex.: TS 7
+# removeu moduleResolution=node10, run 39563232602) e exigem ADR + migração
+# planejada com a suíte completa. Alertas de SEGURANÇA do Dependabot seguem
+# outro caminho e continuam chegando, inclusive para majors.
 
 version: 2
 updates:
@@ -21,35 +28,14 @@ updates:
       - "dependencies"
       - "security"
     groups:
-      root-npm:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "npm"
-    directory: "/apps/api"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "security"
-    groups:
-      api:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "npm"
-    directory: "/apps/web"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "security"
-    groups:
-      web:
-        patterns:
-          - "*"
+      minor-e-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "docker"
     directory: "/"

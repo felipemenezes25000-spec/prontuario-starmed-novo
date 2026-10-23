@@ -16,6 +16,7 @@ import { checkRevocation, revocationModeFromEnv } from './pki/revocation';
 import { qualifySignature, tsaCategoryToHttpStatus } from './signature';
 import { ageInYears, brDate, complianceMissing, formatPhone, KIND_LABEL, kindBlockReason, PRESCRIPTION_KINDS, RX_RULES_VERSION, validUntil, type PrescriberRegistration, type PrescriptionKind } from './prescription-compliance';
 import { loadRegistration } from './practitioners';
+import { kindSubstanceConflict, sameActiveIngredient } from './medication-terms';
 
 /** Fluxo de prescrição eletrônica: rascunho estruturado, segurança medicamentosa
  * (alergias registradas + duplicidade terapêutica), assinatura restrita a médico
@@ -126,6 +127,11 @@ export type ActivePrescriptionInput = { id: string; medication_name: string };
 export function normalizeMedTerm(value: string): string {
   return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
+/** Correspondência por texto OU pelo mesmo princípio ativo conhecido (lote 3:
+ *  "Novalgina" × alergia a "dipirona"). Só acrescenta alertas. */
+export function substanceMatch(a: string, b: string): boolean {
+  return medTermsMatch(a, b) || sameActiveIngredient(a, b);
+}
 /** Correspondência declarativa entre medicação e substância registrada. */
 export function medTermsMatch(a: string, b: string): boolean {
   const na = normalizeMedTerm(a);
@@ -145,14 +151,14 @@ export function evaluatePrescriptionSafety(input: {
     alerts.push({ level: 'info', code: 'no_allergy_record', message: 'Paciente sem alergias registradas; confirme a anamnese antes de assinar.' });
   for (const a of input.allergies) {
     if (a.clinical_status !== 'active') continue;
-    if (!medTermsMatch(input.medicationName, a.substance)) continue;
+    if (!substanceMatch(input.medicationName, a.substance)) continue;
     if (a.criticality === 'high')
       alerts.push({ level: 'block', code: 'allergy_high', message: `Alergia crítica registrada (${a.substance}); prescrição bloqueada sem possibilidade de override.`, substance: a.substance, criticality: a.criticality });
     else
       alerts.push({ level: 'review_required', code: 'allergy_active', message: `Alergia ativa registrada (${a.substance}, criticidade ${a.criticality}); revisar antes de assinar.`, substance: a.substance, criticality: a.criticality });
   }
   for (const p of input.activePrescriptions) {
-    if (!medTermsMatch(input.medicationName, p.medication_name)) continue;
+    if (!substanceMatch(input.medicationName, p.medication_name)) continue;
     alerts.push({ level: 'review_required', code: 'duplicate_therapy', message: `Mesma medicação já prescrita ativamente (${p.id}); verificar duplicidade terapêutica.`, existingPrescriptionId: p.id });
   }
   return alerts;
@@ -183,6 +189,11 @@ export function ensureSpecialClassConfigured(specialClass: string | undefined | 
 export function ensureKindAllowed(kind: PrescriptionKind): void {
   const reason = kindBlockReason(kind);
   if (reason) throw new ConflictException(reason);
+}
+/** Substância regulada no tipo errado (ex.: clonazepam em receita simples) → 409. */
+export function ensureKindFitsSubstance(kind: PrescriptionKind, medicationName: string): void {
+  const reason = kindSubstanceConflict(kind, medicationName);
+  if (reason) throw new ConflictException({ message: reason, code: 'kind_substance_mismatch' });
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +428,7 @@ export class EncounterPrescriptionsController {
     const body = parse(createPrescriptionSchema, raw);
     ensureSpecialClassConfigured(body.specialClass);
     ensureKindAllowed(body.kind);
+    ensureKindFitsSubstance(body.kind, body.medication.name);
     return this.db.tx(async c => {
       const encounter = await loadEncounter(c, encounterId, actor.org_id);
       if (encounter.status === 'cancelled') throw new ConflictException('Atendimento cancelado não aceita prescrição');
@@ -508,6 +520,7 @@ export class PrescriptionsController {
       if (!current.rowCount) throw new NotFoundException('Prescrição não encontrada');
       const row = current.rows[0];
       if (row.status !== 'draft') throw new ConflictException('Prescrição assinada ou cancelada é imutável: edição permitida apenas em rascunho');
+      ensureKindFitsSubstance((body.kind ?? row.kind) as PrescriptionKind, body.medication?.name ?? row.medication_name);
       const encounter = await loadEncounter(c, row.encounter_id, actor.org_id);
       const doseText = body.dose ? `${body.dose.value} ${body.dose.unit}` : null;
       const updated = await c.query<any>(
@@ -577,6 +590,7 @@ export class PrescriptionsController {
       // medicamentosa: sem CRM/UF do ASSINANTE não se emite documento.
       const kind = row.kind as PrescriptionKind;
       ensureKindAllowed(kind);
+      ensureKindFitsSubstance(kind, row.medication_name);
       const registration = await loadRegistration(c, actor.org_id, actor.id);
       const birthIso = row.birth_date instanceof Date ? row.birth_date.toISOString().slice(0, 10) : String(row.birth_date ?? '');
       const missing = complianceMissing({ kind, patient: { administrativeGender: row.administrative_gender ?? null, birthDate: birthIso || null }, registration });

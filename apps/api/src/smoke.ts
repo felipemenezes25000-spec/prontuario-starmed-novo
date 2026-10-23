@@ -144,6 +144,10 @@ async function main(){
   const kinds=await request<{kinds:Array<{kind:string;enabled:boolean;reason:string|null}>}>('/prescription-kinds',token);
   assert.equal(kinds.kinds.find(k=>k.kind==='controlled_special')?.enabled,false,'controle especial nunca sem SNCR');
   await request('/encounters/'+visit.id+'/prescriptions',token,'POST',{...rxPayload,operationId:randomUUID(),kind:'controlled_special'},409);
+  // Lote 3: substância regulada no tipo errado nunca vira rascunho (marca → princípio ativo).
+  const clz=await request<{code?:string}>('/encounters/'+visit.id+'/prescriptions',token,'POST',{...rxPayload,operationId:randomUUID(),medication:{name:'Rivotril 2 mg',form:'tablet'}},409);
+  assert.equal(clz.code,'kind_substance_mismatch','controle especial não sai em receita simples');
+  await request('/encounters/'+visit.id+'/prescriptions',token,'POST',{...rxPayload,operationId:randomUUID(),medication:{name:'Amoxil 500 mg',form:'capsule'}},409);
   if(!kinds.kinds.find(k=>k.kind==='antimicrobial')?.enabled)
     await request('/encounters/'+visit.id+'/prescriptions',token,'POST',{...rxPayload,operationId:randomUUID(),kind:'antimicrobial'},409);
 

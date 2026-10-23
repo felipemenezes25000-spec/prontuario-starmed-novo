@@ -7,6 +7,7 @@ import { aiSchema, aiSuggestionSchema, appointmentSchema, draftSchema, encounter
 import { AI_PROMPT_VERSION, detectPromptInjection } from './ai-clinical';
 import { toFhirPatient } from './fhir-extra';
 import { identifyDocument, maskCpf } from './br-identifiers';
+import { registrationSchema, upsertRegistration } from './practitioners';
 
 type R = {actor:Actor};
 type RWithHeaders = R & { headers?: Record<string, unknown> };
@@ -61,9 +62,17 @@ export class UsersController {
     const b=parse(userSchema,raw);
     const existing=await this.db.query('SELECT id FROM users WHERE lower(email)=lower($1) LIMIT 1',[b.email]);
     if(existing.rowCount) throw new ConflictException('E-mail já cadastrado');
-    const result=await this.db.query<any>('INSERT INTO users(org_id,email,display_name,role,password_hash) VALUES($1,$2,$3,$4,$5) RETURNING id,email,display_name AS "displayName",role',[actor.org_id,b.email.toLowerCase(),b.displayName,b.role,await hashPassword(b.password)]);
-    await audit(this.db,actor,'user.created','user',result.rows[0].id);
-    return result.rows[0];
+    const registration=b.registration===undefined?undefined:parse(registrationSchema,b.registration);
+    if(registration&&b.role!=='doctor')throw new BadRequestException('Registro de CRM se aplica apenas a usuários médicos');
+    const passwordHash=await hashPassword(b.password);
+    // Usuário e registro profissional na MESMA transação: CRM inválido ou já
+    // vinculado não deixa um médico "sem CRM" criado pela metade.
+    return this.db.tx(async c=>{
+      const result=await c.query<any>('INSERT INTO users(org_id,email,display_name,role,password_hash) VALUES($1,$2,$3,$4,$5) RETURNING id,email,display_name AS "displayName",role',[actor.org_id,b.email.toLowerCase(),b.displayName,b.role,passwordHash]);
+      await audit(c,actor,'user.created','user',result.rows[0].id);
+      const reg=registration?await upsertRegistration(c,actor,result.rows[0].id,registration):null;
+      return {...result.rows[0],registration:reg};
+    });
   }
 }
 @Controller('patients')

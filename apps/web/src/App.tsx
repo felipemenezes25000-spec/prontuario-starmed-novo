@@ -215,7 +215,7 @@ export default function App(){
   const [encounterType,setEncounterType]=useState('consultation');
   const [reason,setReason]=useState('');
   const [newPatient,setNewPatient]=useState({fullName:'',birthDate:'',administrativeGender:'unknown',cpf:'',cns:''});
-  const [newStaff,setNewStaff]=useState({displayName:'',email:'',role:'doctor',password:''});
+  const [newStaff,setNewStaff]=useState({displayName:'',email:'',role:'doctor',password:'',crm:'',crmUf:'',address:''});
   const [appForm,setAppForm]=useState({patientId:'',practitionerId:'',scheduledAt:'',durationMinutes:30,kind:'consultation'});
   const [passphrase,setPassphrase]=useState('');
   const [pending,setPending]=useState(0);
@@ -292,7 +292,7 @@ export default function App(){
     setEncounter(null);setNote(null);setAddenda([]);setAddendumReason('');setAddendumContent('');
     setSections({});setSpecialty('general');setEncounterType('consultation');setReason('');
     setNewPatient({fullName:'',birthDate:'',administrativeGender:'unknown',cpf:'',cns:''});
-    setNewStaff({displayName:'',email:'',role:'doctor',password:''});
+    setNewStaff({displayName:'',email:'',role:'doctor',password:'',crm:'',crmUf:'',address:''});
     setAppForm({patientId:'',practitionerId:'',scheduledAt:'',durationMinutes:30,kind:'consultation'});
     setPassphrase('');setPending(0);setTranscript('');setAiResult(null);setLoading(false);
     resetBreakGlass();setCancelTarget('');setCancelReason('');setApptBusy('');
@@ -522,8 +522,10 @@ export default function App(){
   async function createStaff(e:FormEvent){
     e.preventDefault();if(!token||!session)return;
     try{
-      await api('/users',token,'POST',newStaff);
-      setNewStaff({displayName:'',email:'',role:'doctor',password:''});await loadLists(session);
+      // CRM/UF (029): enviado só para médico e quando preenchido; o servidor valida o formato.
+      const {crm,crmUf,address,...base}=newStaff;
+      await api('/users',token,'POST',base.role==='doctor'&&crm.trim()?{...base,registration:{councilNumber:crm,councilState:crmUf,professionalAddress:address}}:base);
+      setNewStaff({displayName:'',email:'',role:'doctor',password:'',crm:'',crmUf:'',address:''});await loadLists(session);
       alert('Profissional cadastrado.','success');
     }catch(err){alert((err as Error).message,'error');}
   }
@@ -750,6 +752,11 @@ export default function App(){
               <label>Nome<input required value={newStaff.displayName} onChange={e=>setNewStaff({...newStaff,displayName:e.target.value})}/></label>
               <label>E-mail<input required type="email" value={newStaff.email} onChange={e=>setNewStaff({...newStaff,email:e.target.value})}/></label>
               <label>Perfil<select value={newStaff.role} onChange={e=>setNewStaff({...newStaff,role:e.target.value})}><option value="doctor">Médico</option><option value="nurse">Enfermagem</option><option value="reception">Recepção</option><option value="admin">Administrador</option></select></label>
+              {newStaff.role==='doctor'&&<>
+                <label>CRM (número)<input inputMode="numeric" value={newStaff.crm} onChange={e=>setNewStaff({...newStaff,crm:e.target.value})} placeholder="123456" aria-describedby="crm-hint"/><small id="crm-hint" className="field-hint">Sem CRM/UF cadastrado o médico não assina receitas. Situação no conselho é conferida fora do sistema.</small></label>
+                <label>UF do CRM<select value={newStaff.crmUf} onChange={e=>setNewStaff({...newStaff,crmUf:e.target.value})}><option value="">Selecione</option>{['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf=><option key={uf} value={uf}>{uf}</option>)}</select></label>
+                <label>Endereço profissional (opcional)<input value={newStaff.address} onChange={e=>setNewStaff({...newStaff,address:e.target.value})} placeholder="Obrigatório na receita de antimicrobiano"/></label>
+              </>}
               <label>Senha temporária (mín. 12 caracteres)<input required minLength={12} type="password" value={newStaff.password} onChange={e=>setNewStaff({...newStaff,password:e.target.value})}/></label>
               <button className="primary-button" type="submit"><Plus size={17}/> Cadastrar</button>
             </form><p className="security-note">Verificação em duas etapas disponível em Segurança. A redefinição de senha pelo usuário é item pendente para produção.</p></div></div>

@@ -14,6 +14,8 @@ import { validateChain } from './pki/chain';
 import { OIDS, documentTypeOid } from './pki/iti-oids';
 import { checkRevocation, revocationModeFromEnv } from './pki/revocation';
 import { qualifySignature, tsaCategoryToHttpStatus } from './signature';
+import { ageInYears, brDate, complianceMissing, formatPhone, KIND_LABEL, kindBlockReason, PRESCRIPTION_KINDS, RX_RULES_VERSION, validUntil, type PrescriberRegistration, type PrescriptionKind } from './prescription-compliance';
+import { loadRegistration } from './practitioners';
 
 /** Fluxo de prescrição eletrônica: rascunho estruturado, segurança medicamentosa
  * (alergias registradas + duplicidade terapêutica), assinatura restrita a médico
@@ -62,6 +64,8 @@ const createPrescriptionSchema = z.object({
   quantity: z.number().int().positive().max(9999),
   indication: z.string().trim().min(2).max(500),
   instructions: z.string().trim().min(2).max(2000),
+  // Tipo de receita (029). Bloqueios por tipo em prescription-compliance.ts.
+  kind: z.enum(PRESCRIPTION_KINDS).default('simple'),
   specialClass: z.string().trim().min(2).max(60).optional()
 }).strict();
 const updatePrescriptionSchema = z.object({
@@ -74,6 +78,7 @@ const updatePrescriptionSchema = z.object({
   quantity: z.number().int().positive().max(9999).optional(),
   indication: z.string().trim().min(2).max(500).optional(),
   instructions: z.string().trim().min(2).max(2000).optional(),
+  kind: z.enum(PRESCRIPTION_KINDS).optional(),
   specialClass: z.string().trim().min(2).max(60).optional()
 }).strict().refine(b => Object.values(b).some(v => v !== undefined), 'Informe ao menos um campo para edição');
 const signPrescriptionSchema = z.object({
@@ -97,7 +102,7 @@ const PRESCRIPTION_COLUMNS =
   'p.id,p.encounter_id,p.prescriber_id,p.medication_code,p.medication_name,p.dose,p.dose_value,p.dose_unit,p.medication_form,' +
   'p.medication_concentration,p.route,p.frequency,p.duration,p.times,p.quantity,p.indication,p.instructions,p.special_class,' +
   'p.status,p.signature_status,p.signed_document_id,p.signed_by,p.signed_at,p.override_justification,p.cancel_reason,' +
-  'p.cancelled_by,p.cancelled_at,p.created_at,p.updated_at';
+  'p.cancelled_by,p.cancelled_at,p.created_at,p.updated_at,p.kind,p.valid_until,p.prescriber_registration';
 
 // ---------------------------------------------------------------------------
 // Segurança medicamentosa (pura, testável sem banco). Heurística SOMENTE sobre
@@ -173,6 +178,13 @@ export function ensureSpecialClassConfigured(specialClass: string | undefined | 
     throw new ConflictException('Classe especial enviada, mas a feature está desabilitada: nenhuma configuração ativa no sistema para validá-la.');
 }
 
+/** Tipo de receita bloqueado no ambiente (flag desligada ou dependência externa
+ *  ausente) → 409 com o motivo honesto, sem gravar nada. */
+export function ensureKindAllowed(kind: PrescriptionKind): void {
+  const reason = kindBlockReason(kind);
+  if (reason) throw new ConflictException(reason);
+}
+
 // ---------------------------------------------------------------------------
 // Builder de PDF mínimo próprio (sem dependência nova): página A4, Helvetica
 // com WinAnsiEncoding (acentos em português preservados), escape de \ ( ),
@@ -199,7 +211,17 @@ export type PrescriptionPdfInput = {
   instructions: string;
   signedAt: string;
   payloadSha256: string;
+  /** 029: tipo de receita; ausente = simples (documentos anteriores). */
+  kind?: PrescriptionKind;
+  /** Último dia de validade (AAAA-MM-DD) quando o tipo tem validade regulatória. */
+  validUntil?: string | null;
+  /** Snapshot do registro profissional do assinante; ausente = documento anterior à 029. */
+  prescriber?: PrescriberRegistration | null;
+  patientSex?: string | null;
+  patientAge?: number | null;
 };
+
+const SEX_LABEL: Record<string, string> = { male: 'Masculino', female: 'Feminino', other: 'Outro', unknown: 'Não informado' };
 
 export function escapePdfText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
@@ -231,12 +253,31 @@ const LINES_PER_PAGE = 52;
 type PdfLine = { text: string; size: number };
 
 export function buildPrescriptionPdf(input: PrescriptionPdfInput): Buffer {
+  const kind = input.kind ?? 'simple';
+  // Antimicrobiano (RDC 471/2021): duas vias idênticas, cada uma começando em
+  // página própria — 1ª retida pela farmácia, 2ª com o paciente.
+  const vias = kind === 'antimicrobial' ? ['1ª via - retenção da farmácia', '2ª via - paciente'] : [null];
+  const pages: PdfLine[][] = [];
+  for (const via of vias) {
+    const lines = prescriptionPdfLines(input, kind, via);
+    for (let i = 0; i < lines.length; i += LINES_PER_PAGE) pages.push(lines.slice(i, i + LINES_PER_PAGE));
+  }
+  return renderPdf(pages);
+}
+
+function prescriptionPdfLines(input: PrescriptionPdfInput, kind: PrescriptionKind, via: string | null): PdfLine[] {
   const lines: PdfLine[] = [];
   const push = (text: string, size = 10) => lines.push({ text, size });
   push(`STARMed - ${input.orgName}`, 12);
-  push('PRESCRIÇÃO MÉDICA ELETRÔNICA', 13);
+  push(kind === 'simple' ? 'PRESCRIÇÃO MÉDICA ELETRÔNICA' : `PRESCRIÇÃO MÉDICA ELETRÔNICA - ${KIND_LABEL[kind].toUpperCase()}`, 13);
+  if (via) push(via.toUpperCase(), 11);
+  if (input.validUntil) push(`VALIDADE: até ${brDate(input.validUntil)} (10 dias contados da emissão, inclusive)`, 11);
   push(`Paciente: ${input.patientName}`);
   push(`Data de nascimento: ${input.patientBirthDate}`);
+  if (kind === 'antimicrobial') {
+    push(`Sexo: ${SEX_LABEL[input.patientSex ?? 'unknown'] ?? input.patientSex}`);
+    if (input.patientAge != null) push(`Idade: ${input.patientAge} anos`);
+  }
   push(`Atendimento: ${input.encounterId}`);
   push(`Prescrição: ${input.prescriptionId}`);
   push('');
@@ -253,17 +294,26 @@ export function buildPrescriptionPdf(input: PrescriptionPdfInput): Buffer {
   push('Instruções:', 11);
   for (const l of wrapPdfText(input.instructions, 92)) push('  ' + l);
   push('');
-  push(`Prescrito por: ${input.prescriberName}`);
-  push('Registro profissional (CRM/UF): pendência - não cadastrado no sistema.');
+  push(`Prescrito e assinado por: ${input.prescriberName}`);
+  const reg = input.prescriber;
+  if (reg) {
+    push(`CRM ${reg.councilNumber}/${reg.councilState}${reg.rqe ? ` - RQE ${reg.rqe}` : ''}${reg.specialty ? ` - ${reg.specialty}` : ''}`);
+    if (reg.professionalAddress) for (const l of wrapPdfText(`Endereço profissional: ${reg.professionalAddress}`, 92)) push(l);
+    if (reg.professionalPhone) push(`Telefone profissional: ${formatPhone(reg.professionalPhone)}`);
+  } else {
+    push('Registro profissional (CRM/UF): não registrado no momento da emissão.');
+  }
   push(`Emitido em: ${input.signedAt}`);
   push(`Identificador SHA-256 dos dados: ${input.payloadSha256}`);
   push('Status na emissão: ATESTADO - PDF gerado, persistido e hasheado no servidor.', 11);
   push('Assinatura digital PAdES (ICP-Brasil): etapa SEPARADA, embarcada neste arquivo com ByteRange (ver POST /prescriptions/:id/sign-pades).', 10);
   push('Sem a etapa PAdES, esta folha NÃO constitui assinatura qualificada.', 10);
+  push(`Regras de conformidade aplicadas: ${RX_RULES_VERSION}`, 9);
+  return lines;
+}
 
-  const pages: PdfLine[][] = [];
-  for (let i = 0; i < lines.length; i += LINES_PER_PAGE) pages.push(lines.slice(i, i + LINES_PER_PAGE));
-  if (pages.length === 0) pages.push(lines);
+function renderPdf(pages: PdfLine[][]): Buffer {
+  if (pages.length === 0) pages.push([]);
 
   const fontObj = 3 + pages.length * 2;
   const objects: string[] = [
@@ -366,6 +416,7 @@ export class EncounterPrescriptionsController {
     const encounterId = parse(uuid, rawId);
     const body = parse(createPrescriptionSchema, raw);
     ensureSpecialClassConfigured(body.specialClass);
+    ensureKindAllowed(body.kind);
     return this.db.tx(async c => {
       const encounter = await loadEncounter(c, encounterId, actor.org_id);
       if (encounter.status === 'cancelled') throw new ConflictException('Atendimento cancelado não aceita prescrição');
@@ -378,11 +429,11 @@ export class EncounterPrescriptionsController {
       const doseText = `${body.dose.value} ${body.dose.unit}`;
       const inserted = await c.query<any>(
         `INSERT INTO prescriptions(org_id,encounter_id,prescriber_id,medication_code,medication_name,dose,dose_value,dose_unit,
-           medication_form,medication_concentration,route,frequency,duration,times,quantity,indication,instructions)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17) RETURNING *`,
+           medication_form,medication_concentration,route,frequency,duration,times,quantity,indication,instructions,kind)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18) RETURNING *`,
         [actor.org_id, encounterId, actor.id, body.medication.code ?? null, body.medication.name, doseText,
          body.dose.value, body.dose.unit, body.medication.form ?? null, body.medication.concentration ?? null,
-         body.route, body.frequency, body.duration, JSON.stringify(body.times), body.quantity, body.indication, body.instructions]);
+         body.route, body.frequency, body.duration, JSON.stringify(body.times), body.quantity, body.indication, body.instructions, body.kind]);
       const alerts = await computeSafetyAlerts(c, actor.org_id, encounter.patient_id, body.medication.name);
       const response = { ...inserted.rows[0], safetyAlerts: alerts };
       await audit(c, actor, 'prescription.draft.created', 'prescription', inserted.rows[0].id,
@@ -449,6 +500,7 @@ export class PrescriptionsController {
     const id = parse(uuid, rawId);
     const body = parse(updatePrescriptionSchema, raw);
     ensureSpecialClassConfigured(body.specialClass);
+    if (body.kind) ensureKindAllowed(body.kind);
     const changed = Object.keys(body).filter(k => k !== 'specialClass');
     return this.db.tx(async c => {
       const current = await c.query<any>(
@@ -474,12 +526,13 @@ export class PrescriptionsController {
            quantity=COALESCE($14,quantity),
            indication=COALESCE($15,indication),
            instructions=COALESCE($16,instructions),
+           kind=COALESCE($17,kind),
            updated_at=now()
          WHERE id=$1 AND org_id=$2 RETURNING *`,
         [id, actor.org_id, body.medication?.code ?? null, body.medication?.name ?? null, doseText,
          body.dose?.value ?? null, body.dose?.unit ?? null, body.medication?.form ?? null, body.medication?.concentration ?? null,
          body.route ?? null, body.frequency ?? null, body.duration ?? null, body.times ? JSON.stringify(body.times) : null,
-         body.quantity ?? null, body.indication ?? null, body.instructions ?? null]);
+         body.quantity ?? null, body.indication ?? null, body.instructions ?? null, body.kind ?? null]);
       const alerts = await computeSafetyAlerts(c, actor.org_id, encounter.patient_id, updated.rows[0].medication_name, id);
       await audit(c, actor, 'prescription.draft.updated', 'prescription', id, { changedFields: changed });
       return { ...updated.rows[0], safetyAlerts: alerts };
@@ -495,11 +548,11 @@ export class PrescriptionsController {
     const id = parse(uuid, rawId);
     const body = parse(signPrescriptionSchema, raw);
     return this.db.tx(async c => {
-      const me = await c.query<any>('SELECT role,active FROM users WHERE id=$1 AND org_id=$2', [actor.id, actor.org_id]);
+      const me = await c.query<any>('SELECT role,active,display_name FROM users WHERE id=$1 AND org_id=$2', [actor.id, actor.org_id]);
       if (!me.rowCount || me.rows[0].role !== 'doctor' || !me.rows[0].active)
         throw new ForbiddenException('Apenas médicos ativos podem assinar prescrições');
       const loaded = await c.query<any>(
-        `SELECT ${PRESCRIPTION_COLUMNS}, e.patient_id, pt.full_name AS patient_name, pt.birth_date,
+        `SELECT ${PRESCRIPTION_COLUMNS}, e.patient_id, pt.full_name AS patient_name, pt.birth_date, pt.administrative_gender,
                 u.display_name AS prescriber_name, o.name AS org_name
          FROM prescriptions p
          JOIN encounters e ON e.id=p.encounter_id AND e.org_id=p.org_id
@@ -519,6 +572,16 @@ export class PrescriptionsController {
       }
       if (row.status === 'cancelled') throw new ConflictException('Prescrição cancelada não pode ser assinada');
       if (row.status === 'signed') throw new ConflictException('Prescrição já assinada');
+      // 029: o tipo é rechecado NA ASSINATURA (a flag pode ter sido desligada
+      // depois do rascunho) e a conformidade por tipo vem antes da segurança
+      // medicamentosa: sem CRM/UF do ASSINANTE não se emite documento.
+      const kind = row.kind as PrescriptionKind;
+      ensureKindAllowed(kind);
+      const registration = await loadRegistration(c, actor.org_id, actor.id);
+      const birthIso = row.birth_date instanceof Date ? row.birth_date.toISOString().slice(0, 10) : String(row.birth_date ?? '');
+      const missing = complianceMissing({ kind, patient: { administrativeGender: row.administrative_gender ?? null, birthDate: birthIso || null }, registration });
+      if (missing.length)
+        throw new UnprocessableEntityException({ message: 'Receita não atende aos requisitos do tipo: complete os dados antes de assinar', missing, rulesVersion: RX_RULES_VERSION });
       const alerts = await computeSafetyAlerts(c, actor.org_id, row.patient_id, row.medication_name, id);
       if (hasBlockingAlert(alerts))
         throw new UnprocessableEntityException({ message: 'Segurança medicamentosa bloqueia a assinatura', alerts });
@@ -527,22 +590,31 @@ export class PrescriptionsController {
       if (body.overrideJustification)
         await audit(c, actor, 'prescription.safety.override', 'prescription', id,
           { alertCodes: alerts.map(a => a.code), overrideJustification: body.overrideJustification });
+      const signedAtDate = new Date();
+      const validity = validUntil(kind, signedAtDate);
+      const regSnapshot = registration ? {
+        councilNumber: registration.councilNumber, councilState: registration.councilState, rqe: registration.rqe ?? null,
+        specialty: registration.specialty ?? null, professionalAddress: registration.professionalAddress ?? null,
+        professionalPhone: registration.professionalPhone ?? null, rulesVersion: RX_RULES_VERSION
+      } : null;
       const payloadHash = prescriptionPayloadSha256({
-        prescriptionId: id, encounterId: row.encounter_id, patientId: row.patient_id, prescriberId: row.prescriber_id,
+        prescriptionId: id, kind, validUntil: validity, prescriberRegistration: regSnapshot, encounterId: row.encounter_id, patientId: row.patient_id, prescriberId: row.prescriber_id,
         medicationName: row.medication_name, medicationCode: row.medication_code, medicationForm: row.medication_form,
         medicationConcentration: row.medication_concentration, doseValue: row.dose_value, doseUnit: row.dose_unit,
         route: row.route, frequency: row.frequency, duration: row.duration, times: row.times,
         quantity: row.quantity, indication: row.indication, instructions: row.instructions
       });
-      const signedAt = new Date().toISOString();
-      const birthDate = row.birth_date instanceof Date ? row.birth_date.toISOString().slice(0, 10) : String(row.birth_date);
+      const signedAt = signedAtDate.toISOString();
+      const birthDate = birthIso;
       const pdf = buildPrescriptionPdf({
         prescriptionId: id, encounterId: row.encounter_id, orgName: row.org_name, patientName: row.patient_name,
-        patientBirthDate: birthDate, prescriberName: row.prescriber_name, medicationName: row.medication_name,
+        patientBirthDate: birthDate, prescriberName: me.rows[0].display_name, medicationName: row.medication_name,
         medicationForm: row.medication_form, medicationConcentration: row.medication_concentration,
         doseText: row.dose ?? `${row.dose_value} ${row.dose_unit}`, route: row.route, frequency: row.frequency,
         duration: row.duration, times: row.times ?? [], quantity: row.quantity, indication: row.indication,
-        instructions: row.instructions, signedAt, payloadSha256: payloadHash
+        instructions: row.instructions, signedAt, payloadSha256: payloadHash,
+        kind, validUntil: validity, prescriber: regSnapshot, patientSex: row.administrative_gender ?? null,
+        patientAge: birthDate ? ageInYears(birthDate, signedAtDate) : null
       });
       const pdfSha256 = createHash('sha256').update(pdf).digest('hex');
       const storageKey = `prescriptions/${actor.org_id}/${id}.pdf`;
@@ -556,9 +628,10 @@ export class PrescriptionsController {
         [actor.org_id, row.patient_id, row.encounter_id, storageKey, pdfSha256, pdf, actor.id]);
       const signed = await c.query<any>(
         `UPDATE prescriptions SET status='signed',signed_by=$3,signed_at=now(),signed_document_id=$4,
-           signature_status='attested',override_justification=COALESCE($5,override_justification),updated_at=now()
-         WHERE id=$1 AND org_id=$2 AND status='draft' RETURNING id,status,signature_status,signed_document_id,signed_at`,
-        [id, actor.org_id, actor.id, document.rows[0].id, body.overrideJustification ?? null]);
+           signature_status='attested',override_justification=COALESCE($5,override_justification),
+           valid_until=$6,prescriber_registration=$7::jsonb,updated_at=now()
+         WHERE id=$1 AND org_id=$2 AND status='draft' RETURNING id,status,signature_status,signed_document_id,signed_at,kind,valid_until`,
+        [id, actor.org_id, actor.id, document.rows[0].id, body.overrideJustification ?? null, validity, regSnapshot ? JSON.stringify(regSnapshot) : null]);
       if (!signed.rowCount) throw new ConflictException('Prescrição deixou de ser rascunho durante a assinatura');
       await audit(c, actor, 'prescription.signed', 'prescription', id,
         { documentId: document.rows[0].id, signatureStatus: 'attested', overridden: hasReviewRequiredAlert(alerts) });

@@ -38,6 +38,7 @@ type Prescription={
   dose_value:number|null;dose_unit:string|null;medication_form:string|null;medication_concentration:string|null;
   route:string;frequency:string;duration:string;times:unknown;
   quantity:number|null;indication:string;instructions:string;special_class:string|null;
+  kind?:string;valid_until?:string|null;
   status:'draft'|'signed'|'cancelled';signature_status:'none'|'attested'|'pades';
   signed_document_id:string|null;signed_at:string|null;override_justification:string|null;
   cancel_reason:string|null;cancelled_at:string|null;
@@ -62,7 +63,7 @@ type PadesForm={cert:string;chain:string;key:string;crm:string;uf:string;require
 type DraftForm={
   medName:string;medCode:string;medForm:string;concentration:string;
   doseValue:string;doseUnit:string;route:string;frequency:string;duration:string;
-  times:string[];quantity:string;indication:string;instructions:string;
+  times:string[];quantity:string;indication:string;instructions:string;kind:string;
 };
 
 const NETWORK='Não foi possível conectar ao StarMed. Tente novamente.';
@@ -78,7 +79,7 @@ const MED_FORMS:{value:MedicationForm;label:string}[]=[
 ];
 const ROUTES=['Oral','Intravenosa','Intramuscular','Subcutânea','Tópica','Inalatória','Oftálmica','Otológica','Retal','Sublingual'];
 
-const emptyForm=():DraftForm=>({medName:'',medCode:'',medForm:'',concentration:'',doseValue:'',doseUnit:'',route:'',frequency:'',duration:'',times:['08:00'],quantity:'',indication:'',instructions:''});
+const emptyForm=():DraftForm=>({medName:'',medCode:'',medForm:'',concentration:'',doseValue:'',doseUnit:'',route:'',frequency:'',duration:'',times:['08:00'],quantity:'',indication:'',instructions:'',kind:'simple'});
 const fmt=(v?:string|null)=>v?new Date(v).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}):'—';
 const statusLabel=(s:string)=>s==='draft'?'Rascunho':s==='signed'?'Atestada':s==='cancelled'?'Cancelada':s;
 /** Rotulo honesto do resultado de assinatura — nunca "assinatura válida". */
@@ -118,6 +119,14 @@ function bodyOf(e:unknown):Record<string,unknown>|null{
 function issuesOf(e:unknown):ApiIssue[]{
   const raw=bodyOf(e)?.issues;
   return Array.isArray(raw)?raw.filter((x):x is ApiIssue=>!!x&&typeof x==='object'&&typeof (x as ApiIssue).path==='string'&&typeof (x as ApiIssue).message==='string'):[];
+}
+const KIND_TEXT:Record<string,string>={simple:'Receita simples',antimicrobial:'Antimicrobiano (RDC 471/2021)',controlled_special:'Controle especial (Portaria 344/1998)'};
+type KindInfo={kind:string;label:string;enabled:boolean;reason:string|null};
+/** 422 de conformidade (029): campos que o tipo de receita exige e faltam. */
+function missingOf(e:unknown):string[]{
+  const raw=bodyOf(e)?.missing;
+  if(!Array.isArray(raw))return[];
+  return raw.map(x=>x&&typeof x==='object'&&typeof (x as {message?:unknown}).message==='string'?(x as {message:string}).message:'').filter(Boolean);
 }
 function alertsOf(e:unknown):SafetyAlert[]{
   const raw=bodyOf(e)?.alerts;
@@ -161,7 +170,7 @@ function validate(f:DraftForm):Record<string,string>{
 type CreatePayload={
   medication:{name:string;code?:string;form?:MedicationForm;concentration?:string};
   dose:{value:number;unit:string};
-  route:string;frequency:string;duration:string;times:string[];quantity:number;indication:string;instructions:string;
+  route:string;frequency:string;duration:string;times:string[];quantity:number;indication:string;instructions:string;kind:string;
 };
 function payloadOf(f:DraftForm):CreatePayload{
   const code=f.medCode.trim(),conc=f.concentration.trim();
@@ -169,14 +178,14 @@ function payloadOf(f:DraftForm):CreatePayload{
     medication:{name:f.medName.trim(),...(code?{code}:{}),...(f.medForm?{form:f.medForm as MedicationForm}:{}),...(conc?{concentration:conc}:{})},
     dose:{value:Number(f.doseValue),unit:f.doseUnit.trim()},
     route:f.route.trim(),frequency:f.frequency.trim(),duration:f.duration.trim(),
-    times:[...f.times],quantity:Number(f.quantity),indication:f.indication.trim(),instructions:f.instructions.trim()
+    times:[...f.times],quantity:Number(f.quantity),indication:f.indication.trim(),instructions:f.instructions.trim(),kind:f.kind
   };
 }
 function formOf(rx:Prescription):DraftForm{
   return{
     medName:rx.medication_name,medCode:rx.medication_code??'',medForm:rx.medication_form??'',concentration:rx.medication_concentration??'',
     doseValue:rx.dose_value!=null?String(rx.dose_value):'',doseUnit:rx.dose_unit??'',route:rx.route,frequency:rx.frequency,duration:rx.duration,
-    times:timesOf(rx.times),quantity:rx.quantity!=null?String(rx.quantity):'',indication:rx.indication,instructions:rx.instructions
+    times:timesOf(rx.times),quantity:rx.quantity!=null?String(rx.quantity):'',indication:rx.indication,instructions:rx.instructions,kind:rx.kind??'simple'
   };
 }
 
@@ -238,6 +247,8 @@ function RxDetails({rx}:{rx:Prescription}){
       <div><dt>Quantidade</dt><dd>{rx.quantity??'—'}</dd></div>
       <div><dt>Indicação</dt><dd>{rx.indication}</dd></div>
       <div><dt>Orientações</dt><dd>{rx.instructions}</dd></div>
+      <div><dt>Tipo de receita</dt><dd>{KIND_TEXT[rx.kind??'simple']??rx.kind}</dd></div>
+      {rx.valid_until?<div><dt>Validade</dt><dd>até {String(rx.valid_until).slice(0,10).split('-').reverse().join('/')}</dd></div>:null}
       <div><dt>Prescritor</dt><dd>{rx.prescriber_name||'—'}</dd></div>
       {rx.status==='cancelled'&&<div><dt>Motivo do cancelamento</dt><dd>{rx.cancel_reason||'—'}</dd></div>}
       {rx.override_justification&&<div><dt>Justificativa de override</dt><dd>{rx.override_justification}</dd></div>}
@@ -264,6 +275,10 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
   const [pickId,setPickId]=useState('');
 
   const [form,setForm]=useState<DraftForm>(emptyForm);
+  const [kinds,setKinds]=useState<KindInfo[]>([]);
+  useEffect(()=>{
+    api<{kinds:KindInfo[]}>('/prescription-kinds',token).then(r=>setKinds(r.kinds)).catch(()=>setKinds([]));
+  },[token]);
   const [editingId,setEditingId]=useState<string|null>(null);
   const [errors,setErrors]=useState<Record<string,string>>({});
   const [saving,setSaving]=useState(false);
@@ -389,7 +404,9 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
       const als=alertsOf(e);
       if(als.length){setAlerts(als);setAlertsRxId(rx.id);}
       applyIssues(issuesOf(e));
-      if(als.some(a=>a.level==='block'))alert('Assinatura bloqueada pela segurança medicamentosa: o bloqueio não admite override.','error');
+      const miss=missingOf(e);
+      if(miss.length)alert('Receita não pode ser assinada: '+miss.join(' '),'error');
+      else if(als.some(a=>a.level==='block'))alert('Assinatura bloqueada pela segurança medicamentosa: o bloqueio não admite override.','error');
       else if(e instanceof ApiError&&e.status===409&&als.some(a=>a.level==='review_required'))alert('Revisão obrigatória: informe a justificativa (mínimo de 20 caracteres) no painel de alertas e assine novamente.','error');
       else if(issuesOf(e).length)alert('Dados recusados pelo servidor: corrija os campos destacados.','error');
       else alert(errText(e),'error');
@@ -752,6 +769,13 @@ export function PrescriptionsPage({session,alert,patient,encounter,patients,onSe
                 </div>
                 {Object.keys(errors).filter(k=>k.startsWith('times')).sort().map(k=><div key={k}>{err(k)}</div>)}
               </div>
+              <label>Tipo de receita
+                <select value={form.kind} onChange={e=>setField('kind',e.target.value)} aria-describedby="rx-kind-hint">
+                  {(kinds.length?kinds:[{kind:'simple',label:'Receita simples',enabled:true,reason:null}]).map(k=>
+                    <option key={k.kind} value={k.kind} disabled={!k.enabled}>{KIND_TEXT[k.kind]??k.label}{k.enabled?'':' — indisponível'}</option>)}
+                </select>
+                <small id="rx-kind-hint" className="field-hint">{kinds.filter(k=>!k.enabled).map(k=>(KIND_TEXT[k.kind]??k.label)+': '+k.reason).join(' · ')||'Tipos regulados exigem integrações e revisões próprias.'}</small>
+              </label>
               <label>Indicação <span className="required"> *</span>
                 <textarea rows={2} value={form.indication} maxLength={500} onChange={e=>setField('indication',e.target.value)}
                   placeholder="Ex.: Hipertensão arterial essencial" aria-invalid={!!errors.indication}/>

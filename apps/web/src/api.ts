@@ -9,7 +9,7 @@ export type MfaStatus={enabled:boolean;enrolledAt:string|null;methods:string[]};
 export type MfaEnrollment={secretBase32:string;otpauthUri:string;algorithm:string;digits:number;periodSeconds:number};
 /** EVENTO_SESSION_EXPIRED: disparado apenas quando um endpoint chamado COM token de sessão responde 401. */
 export const EVENT_SESSION_EXPIRED='starmed:session-expired';
-export type Patient={id:string;fullName:string;birthDate:string;administrativeGender?:string;externalId?:string};
+export type Patient={id:string;fullName:string;birthDate:string;administrativeGender?:string;externalId?:string;cpfMasked?:string|null;hasCns?:boolean};
 export type Encounter={id:string;patient_id:string;doctor_id:string;specialty:string;type:string;status:string;started_at:string;reason_for_visit:string};
 export type ClinicalNote={id:string;encounter_id:string;template_id:string;content:{sections:Record<string,string>};version:number;status:'draft'|'signed';signed_at:string|null};
 export type Doctor={id:string;displayName:string;role:Role;email:string};

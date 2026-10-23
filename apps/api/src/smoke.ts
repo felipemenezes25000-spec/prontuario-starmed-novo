@@ -153,6 +153,42 @@ async function main(){
   assert.ok(auditEvents[0].details && typeof auditEvents[0].details.requestId==='string',
     'evento de auditoria carrega requestId para correlação');
 
-  console.log('StarMed smoke test passed: auth, patient history, notes, immutable addenda, FHIR, booking conflicts, prescription+PDF, rejected foreign cert, critical-result ack, audit readback');
+  // Identificadores BR (028): CPF/CNS sintéticos gerados por execução (DV válido,
+  // sem titular real), unicidade por org entre ATIVOS, DV conferido na API e no banco.
+  const cpf=syntheticCpf(),cns=syntheticCns();
+  const withDocs=await request<Id>('/patients',token,'POST',{fullName:'Paciente Documento '+nonce,birthDate:'1984-07-09',cpf:cpf.replace(/^(d{3})(d{3})(d{3})/,'$1.$2.$3-'),cns},201);
+  await request('/patients',token,'POST',{fullName:'Outro '+nonce,birthDate:'1984-07-09',cpf},409);
+  await request('/patients',token,'POST',{fullName:'Outro '+nonce,birthDate:'1984-07-09',cns},409);
+  await request('/patients',token,'POST',{fullName:'DV errado '+nonce,birthDate:'1984-07-09',cpf:cpf.slice(0,10)+String((Number(cpf[10])+1)%10)},400);
+  await request('/patients',token,'POST',{fullName:'Sem documento '+nonce,birthDate:'1984-07-09',cpf:'',cns:''},201);
+  const byCpf=await request<Array<{id:string;cpfMasked:string|null}>>('/patients?q='+cpf,token);
+  assert.equal(byCpf.length,1,'busca por CPF deve ser exata');
+  assert.equal(byCpf[0].id,withDocs.id);
+  assert.equal(byCpf[0].cpfMasked,'***.***.***-'+cpf.slice(-2),'lista mostra só os 2 últimos dígitos');
+  assert.ok(!JSON.stringify(byCpf).includes(cpf),'CPF completo não pode vazar na listagem');
+  const fhirByCns=await request<{total:number;entry?:Array<{resource:{id:string;identifier:Array<{system:string;value:string}>}}>}>('/fhir/R4/Patient?identifier='+encodeURIComponent('http://rnds.saude.gov.br/fhir/r4/NamingSystem/cns|'+cns),token);
+  assert.equal(fhirByCns.total,1);
+  assert.ok(fhirByCns.entry?.[0].resource.identifier.some(i=>i.value===cpf),'Patient FHIR carrega o CPF da RNDS');
+  await request('/fhir/R4/Patient?identifier='+encodeURIComponent('urn:outro|123'),token,'GET',undefined,400);
+  console.log('StarMed smoke test passed: auth, patient history, notes, immutable addenda, FHIR, booking conflicts, prescription+PDF, rejected foreign cert, critical-result ack, audit readback, BR identifiers (CPF/CNS)');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
+
+/** CPF sintético com DV válido (9 dígitos aleatórios; descarta sequência uniforme). */
+function syntheticCpf():string{
+  for(;;){
+    const d=Array.from({length:9},()=>Math.floor(Math.random()*10));
+    if(d.every(x=>x===d[0]))continue;
+    for(const len of [9,10]){let sum=0;for(let i=0;i<len;i++)sum+=d[i]*(len+1-i);const r=sum%11;d.push(r<2?0:11-r);}
+    return d.join('');
+  }
+}
+/** CNS provisório sintético (prefixo 8): último dígito fecha a soma ponderada em múltiplo de 11. */
+function syntheticCns():string{
+  for(;;){
+    const d=[8,...Array.from({length:13},()=>Math.floor(Math.random()*10))];
+    let sum=0;for(let i=0;i<14;i++)sum+=d[i]*(15-i);
+    const last=(11-sum%11)%11;
+    if(last<=9)return [...d,last].join('');
+  }
+}

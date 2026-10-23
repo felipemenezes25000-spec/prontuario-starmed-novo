@@ -1,7 +1,11 @@
 {
   "resourceType": "Patient",
   "id": "fict-patient-0001",
-  "identifier": [{ "system": "urn:starmed:external-id", "value": "EXT-42" }],
+  "identifier": [
+    { "system": "http://rnds.saude.gov.br/fhir/r4/NamingSystem/cpf", "value": "52998224725" },
+    { "system": "http://rnds.saude.gov.br/fhir/r4/NamingSystem/cns", "value": "709002863635814" },
+    { "system": "urn:starmed:external-id", "value": "EXT-42" }
+  ],
   "active": true,
   "name": [{ "use": "official", "text": "MARIA SILVA (DADO FICTICIO)" }],
   "gender": "female",

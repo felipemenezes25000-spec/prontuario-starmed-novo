@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BadRequestException } from '@nestjs/common';
+import { isValidCns, isValidCpf, normalizeCns, normalizeCpf } from './br-identifiers';
 
 export const uuid = z.string().uuid();
 export const role = z.enum(['admin','doctor','nurse','reception']);
@@ -21,6 +22,12 @@ export const patientSchema = z.object({
   administrativeGender: z.enum(['male','female','other','unknown']).optional(),
   externalId: z.string().max(70).optional(),
   phone: z.string().max(35).optional(),
+  // Opcionais (FL-01): aceita máscara, grava só dígitos; DV conferido aqui e no banco (028).
+  // Campo vazio vindo de formulário = não informado (não é "documento inválido").
+  cpf: z.preprocess(v => v === '' ? undefined : v,
+    z.string().max(20).transform(normalizeCpf).refine(isValidCpf, 'CPF inválido').optional()),
+  cns: z.preprocess(v => v === '' ? undefined : v,
+    z.string().max(25).transform(normalizeCns).refine(isValidCns, 'CNS inválido').optional()),
   socialDeterminants: z.record(z.unknown()).optional()
 }).strict();
 

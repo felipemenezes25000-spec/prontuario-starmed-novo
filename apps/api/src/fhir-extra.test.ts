@@ -102,7 +102,7 @@ test('CapabilityStatement R4 mínimo válido com os resources esperados', () => 
   const patient = rest.resource.find((r) => r.type === 'Patient');
   assert.ok(patient);
   assert.deepEqual(patient.interaction.map((i) => i.code), ['read', 'search-type']);
-  assert.deepEqual(patient.searchParam.map((p) => p.name), ['name', 'birthdate']);
+  assert.deepEqual(patient.searchParam.map((p) => p.name), ['name', 'birthdate', 'identifier']);
 
   const condition = rest.resource.find((r) => r.type === 'Condition');
   assert.ok(condition);

@@ -18,7 +18,8 @@
           "interaction": [{ "code": "read" }, { "code": "search-type" }],
           "searchParam": [
             { "name": "name", "type": "string" },
-            { "name": "birthdate", "type": "date" }
+            { "name": "birthdate", "type": "date" },
+            { "name": "identifier", "type": "token" }
           ]
         },
         {
